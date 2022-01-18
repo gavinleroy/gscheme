@@ -9,12 +9,39 @@
 (*                                         *)
 (*******************************************)
 
+open Types
+open Result
+
 (* TODO *)
-module Env = Map.Make(Int)
+module Env = struct
+  module M = Map.Make(String)
+  let lookup env id =
+    M.find id env
+  let extend env id v =
+    M.add id v env
+  let extend_many env ids vs =
+    List.fold_left2 extend env ids vs
+  let empty = M.empty
+end
 
 exception Todo
 
-let empty_env = Env.empty
-
-let eval ?env:(e = empty_env) s =
-  raise Todo
+let rec eval ?env:(e = Env.empty) (s : dyn) : (dyn, string) t =
+  match s with
+  | Dyn (IntT, Int i) -> ok s
+  | Dyn (IdT, Id id) ->
+    begin match Env.lookup e id with
+      | Some d -> ok d
+      | None -> error "symbol not found: todo"
+    end
+  | Dyn (ListT, List [ Dyn (IdT, Id "lambda")
+                     ; Dyn (ListT, List params)
+                     ; body]) ->
+    ok (Dyn (FuncT, Func (fun args ->
+        let id_params = List.map (fun (Dyn(IdT, Id i)) ->
+            i) params
+        in
+        eval body ~env:(Env.extend_many e id_params args))))
+  | Dyn (ListT, List [ Dyn (IdT, Id "quote"); v]) ->
+    ok v
+(* TODO general application case *)

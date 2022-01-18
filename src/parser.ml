@@ -22,10 +22,9 @@ let is_digit = function
   | '0'..'9' -> true
   | _ -> false
 
-let is_char = function
-  | 'a'..'z'
-  | 'A'..'Z' -> true
-  | _ -> false
+let is_valid = fun c ->
+  not (is_whitespace c
+       || c = '(' || c = ')')
 
 let parse_int =
   take_while1 is_digit
@@ -33,7 +32,7 @@ let parse_int =
   return (Types.SxprInt (Int64.of_string sn))
 
 let parse_symbol =
-  take_till (fun c -> is_whitespace c || c = ')')
+  take_while1 is_valid
   >>= fun s -> return (Types.SxprId s)
 
 let parse_atom =
@@ -55,4 +54,4 @@ let parse_prog =
 
 let sexpr_of_string : string -> (Types.sexp, string) result
   = fun s ->
-    parse_string ~consume:Consume.Prefix parse_sexpr s
+    parse_string ~consume:Consume.All parse_sexpr s

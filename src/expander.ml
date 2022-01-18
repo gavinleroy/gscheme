@@ -33,28 +33,50 @@ module Scopes = Set.Make(Scope)
 let hsh_size =
   1000
 
+module Gensym = struct
+  include String
+  type t = string
+  let counter = ref 0
+  let to_string v = v
+  let gensym ?sym:(c = "g") () =
+    begin
+      incr counter;
+      string_of_int !counter
+      |> (^) c
+    end
+end
+
 (********************************************
  ** Syntax objects *)
 
 type stx = symbol * Scopes.t
-(* type _ typ = ..
- * type _ data = .. *)
-type (_, _) eq = Eq : ('a, 'a) eq
-type dyn = Dyn : 'a typ * 'a -> dyn
 
-type _ typ += IdT : id data typ
-type _ typ += ListT : dyn list data typ
-type _ typ += IntT : Int64.t data typ
 (* specific to expansion *)
-type _ typ += LocT : int data typ
+type _ typ += LocT : Gensym.t data typ
 type _ typ += StxT : stx data typ
 
-type _ data += Id : id -> id data
-type _ data += Int : Int64.t -> Int64.t data
-type _ data += List : 'a list -> 'a list data
 (* specific to expansion *)
 type _ data += Stx : stx -> stx data
-type _ data += Loc : int -> int data
+type _ data += Loc : Gensym.t -> Gensym.t data
+
+(********************************************
+ ** Pretty printing *)
+
+let print_dyn s =
+  let rec sd = function
+    | Dyn (IdT, Id s) -> s
+    | Dyn (IntT, Int i) ->
+      Int64.to_string i
+    | Dyn (StxT, Stx (e, scopes)) ->
+      Printf.sprintf "#<syntax %s>" e
+    | Dyn (LocT, Loc i) ->
+      Gensym.to_string i
+    | Dyn (ListT, List ls) ->
+      List.map sd ls
+      |> List.fold_left (fun a s ->
+          a ^ " " ^ s) ""
+      |> Printf.sprintf "(%s)"
+  in print_endline (sd s)
 
 (********************************************
  ** Changing types *)
@@ -106,17 +128,6 @@ and flip_scope s sc =
 
 (********************************************
  ** Global binding table *)
-
-module Gensym = struct
-  include Int
-  type t = int
-  let c = ref 0
-  let gensym () =
-    begin
-      incr c;
-      !c
-    end
-end
 
 exception Ambiguous_candidate_exn of string
 exception Unexpected of string
@@ -213,7 +224,7 @@ let empty_env =
   Env.empty
 
 let variable =
-  Gensym.gensym ()
+  Dyn (LocT, Loc (Gensym.gensym ()))
 
 let env_extend (* : TODO add type *)
   = fun env k v -> match k with
@@ -227,8 +238,8 @@ let env_lookup (* : TODO add type *)
       Env.find_opt binding env
     | _ -> raise (Unexpected __LOC__)
 
-let add_local_binding id =
-  let key = Dyn(LocT, Loc (Gensym.gensym ())) in
+let add_local_binding ((e, scopes) as id) =
+  let key = Dyn(LocT, Loc (Gensym.gensym ~sym:e ())) in
   add_binding id key;
   key
 
@@ -376,21 +387,31 @@ and compile (* : type a. a typ -> dyn -> a data *)
 
 and eval_compiled s =
   Eval.eval s
+  |> function
+  | Result.Ok v -> v
+  | Result.Error _ ->
+    raise (Unexpected __LOC__)
 
 (* short cheap tests to keep everything incrementally working *)
 (* TODO once a real dune project is started move these to a testing dir *)
 let%test_module _ = (module struct
 
+  let s2d s =
+    Parser.sexpr_of_string s
+    |> function
+    | Ok ast -> sexpr_to_dyn ast
+    | Error s ->
+      print_endline s;
+      raise (Unexpected __LOC__)
+
   let _ = bind_core_forms_primitives ()
 
   (* Datum / syntax tests *)
-  let%test _ = (datum_to_syntax (Dyn(IdT, Id "a"))
+  let%test _ = (datum_to_syntax (s2d "a")
                 = (Dyn(StxT, Stx ("a", Scopes.empty))))
-  let%test _ = (datum_to_syntax (Dyn(IntT, Int 1L))
+  let%test _ = (datum_to_syntax (s2d "1")
                 = (Dyn(IntT, Int 1L)))
-  let%test _ = (datum_to_syntax (Dyn(ListT, List[ Dyn(IdT, Id "a")
-                                                ; Dyn(IdT, Id "b")
-                                                ; Dyn(IdT, Id "c")]))
+  let%test _ = (datum_to_syntax (s2d "(a b c)")
                 = (Dyn(ListT, List[ (Dyn(StxT, Stx ("a", Scopes.empty)))
                                   ; (Dyn(StxT, Stx ("b", Scopes.empty)))
                                   ; (Dyn(StxT, Stx ("c", Scopes.empty)))])))
@@ -410,130 +431,111 @@ let%test_module _ = (module struct
   let%test _ = (sc1 = sc2 |> not)
 
   (* adding flipping scopes *)
-  let%test _ = ((add_scope (Dyn(StxT, Stx ("x", Scopes.empty))) sc1)
+  let%test _ = ((add_scope
+                   (datum_to_syntax (s2d "x"))
+                   sc1)
                 = (Dyn(StxT, Stx ("x", Scopes.singleton sc1))))
-
-  let%test _ = ((add_scope (datum_to_syntax
-                              (Dyn (ListT, List [Dyn (IdT, Id "x"); Dyn (ListT, List [Dyn(IdT, Id "y")])]))) sc1)
+  let%test _ = ((add_scope (datum_to_syntax (s2d "(x (y))")) sc1)
                 = Dyn (ListT, List [Dyn (StxT, Stx ("x", Scopes.singleton sc1))
                                    ; Dyn (ListT, List [ Dyn(StxT, Stx ("y", Scopes.singleton sc1))])]))
+  let%test _ = (add_scope (add_scope (datum_to_syntax (s2d "x")) sc1) sc2
+                = Dyn (StxT, Stx ("x", Scopes.of_list [sc1; sc2])))
+  let%test _ = (add_scope (add_scope (datum_to_syntax (s2d "x")) sc1) sc1
+                = Dyn (StxT, Stx ("x", Scopes.singleton sc1)))
+  let%test _ = (flip_scope (Dyn (StxT, Stx ("x", Scopes.singleton sc1))) sc2
+                = (Dyn (StxT, Stx ("x", Scopes.of_list [sc1; sc2]))))
+  let%test _ = (flip_scope (Dyn (StxT, Stx ("x", Scopes.of_list [sc1; sc2]))) sc2
+                = Dyn (StxT, Stx ("x", Scopes.singleton sc1)))
 
-  (* let%test _ (add_scope (add_scope (`Syntax ("x", Scopes.empty)) sc1) sc2
-   *             = `Syntax ("x", Scopes.of_list [sc1; sc2])) *)
+  let a = ("a", Scopes.singleton sc1)
+  let b_out = ("b", Scopes.singleton sc1)
+  let b_in = ("b", Scopes.of_list [sc1; sc2])
+  let c1 = ("c", Scopes.singleton sc1)
+  let c2 = ("c", Scopes.singleton sc2)
 
-  (* let%test _ (add_scope (add_scope (`Syntax ("x", Scopes.empty)) sc1) sc1
-   *             = `Syntax ("x", Scopes.singleton sc1)) *)
+  let _ = add_binding a loc_a
+  let _ = add_binding b_out loc_b_out
+  let _ = add_binding b_in loc_b_in
+  let _ = add_binding c1 loc_c1
+  let _ = add_binding c2 loc_c2
 
-  (* let%test _ (flip_scope (`Syntax ("x", Scopes.singleton sc1)) sc2
-   *             = `Syntax ("x", Scopes.of_list [sc1; sc2])) *)
+  let%test _ = (resolve (Dyn(StxT, Stx a))
+                = Some loc_a)
+  let%test _ = (resolve (Dyn(StxT, Stx ("a", Scopes.of_list [sc1; sc2])))
+                = Some loc_a)
+  let%test _ = (resolve (Dyn(StxT, Stx ("b", Scopes.of_list [sc2])))
+                = None)
 
-  (* let%test _ (flip_scope (`Syntax ("x", Scopes.of_list [sc1; sc2])) sc2
-   *             = `Syntax ("x", Scopes.singleton sc1)) *)
+  let%test _ = (resolve (Dyn(StxT, Stx ("a", Scopes.of_list [sc2])))
+                = None)
+  let%test _ = (resolve (Dyn(StxT, Stx ("b", Scopes.of_list [sc1])))
+                = Some loc_b_out)
+  let%test _ = (resolve (Dyn(StxT, Stx ("b", Scopes.of_list [sc1; sc2])))
+                = Some loc_b_in)
 
+  let%test _ = (find_all_matching_bindings a
+                = [a])
 
-  (* let a = ("a", Scopes.singleton sc1)
-   * and b_out = ("b", Scopes.singleton sc1)
-   * and b_in = ("b", Scopes.of_list [sc1; sc2])
-   * and c1 = ("c", Scopes.singleton sc1)
-   * and c2 = ("c", Scopes.singleton sc2)
-   * in *)
+  let%test _ = (try ignore(resolve (Dyn(StxT, Stx ("c", Scopes.of_list [sc1; sc2]))));
+                  false
+                with Ambiguous_candidate_exn _ -> true)
+  let%test _ = (find_all_matching_bindings ("a", Scopes.singleton sc2)
+                = [])
 
-  (* add_binding a loc_a;
-   * add_binding b_out loc_b_out;
-   * add_binding b_in loc_b_in;
-   * add_binding c1 loc_c1;
-   * add_binding c2 loc_c2; *)
+  module S = Set.Make(struct
+      type t = (string * Scopes.t)
+      let compare (s, ss) (s', ss') =
+        if s = s' then
+          compare ss ss'
+        else compare s s' end)
 
-  (*   assert (resolve (Dyn(StxT, Stx a))
-   *           = Some loc_a);
-   * assert (resolve (Dyn(StxT, Stx ("a", Scopes.of_list [sc1; sc2])))
-   *         = Some loc_a);
-   * assert (resolve (Dyn(StxT, Stx ("b", Scopes.of_list [sc2])))
-   *         = None); *)
-  (* assert (resolve (`Stx ("a", Scopes.of_list [sc2]))
-   *         = None);
-   * assert (resolve (`Syntax ("b", Scopes.of_list [sc1]))
-   *         = Some loc_b_out);
-   * assert (resolve (`Syntax ("b", Scopes.of_list [sc1; sc2]))
-   *         = Some loc_b_in);
-   *
-   * assert (find_all_matching_bindings a
-   *         = [a]);
-   * assert (try ignore(resolve (`Syntax ("c", Scopes.of_list [sc1; sc2])));
-   *           false
-   *         with Ambiguous_candidate_exn _ -> true);
-   * assert (find_all_matching_bindings ("a", Scopes.singleton sc2)
-   *         = []);
-   *
-   * let module S = Set.Make(struct
-   *     type t = (string * Scopes.t)
-   *     let compare (s, ss) (s', ss') =
-   *       if s = s' then
-   *         compare ss ss'
-   *       else compare s s' end)
-   * in
-   *
-   * assert (let open S in
-   *         equal (find_all_matching_bindings b_in |> of_list)
-   *           (of_list [b_in; b_out]));
-   * assert (let open S in
-   *         equal (find_all_matching_bindings ("c", Scopes.of_list [sc1; sc2])
-   *                |> of_list)
-   *           (of_list [c1; c2]));
-   * assert (check_unambiguous b_in [b_out; b_in]
-   *         = ());
-   * assert (try check_unambiguous c2 [c1; c2];
-   *           false
-   *         with Ambiguous_candidate_exn _ ->
-   *           true);
-   * assert (resolve (datum_to_syntax (`Id "lambda"))
-   *         = None);
-   * assert (resolve (introduce (datum_to_syntax (`Id "lambda")))
-   *         = Some (`Id "lambda"));
-   *
-   * assert (env_lookup (empty_env) loc_a
-   *         = None);
-   * assert (env_lookup (env_extend (empty_env) loc_a (`Id "variable")) loc_a
-   *         = Some (`Id "variable"));
-   *
-   * assert (let loc_d = add_local_binding ("d", Scopes.of_list [sc1; sc2]) in
-   *         resolve (`Syntax ("d", Scopes.of_list [sc1; sc2]))
-   *         = Some loc_d); *)
+  let%test _ = (let open S in
+                equal (find_all_matching_bindings b_in |> of_list)
+                  (of_list [b_in; b_out]))
+  let%test _ = (let open S in
+                equal (find_all_matching_bindings ("c", Scopes.of_list [sc1; sc2])
+                       |> of_list)
+                  (of_list [c1; c2]))
+  let%test _ = (check_unambiguous b_in [b_out; b_in]
+                = ())
+  let%test _ = (try check_unambiguous c2 [c1; c2];
+                  false
+                with Ambiguous_candidate_exn _ ->
+                  true)
+  let%test _ = (resolve (datum_to_syntax (Dyn(IdT, Id "lambda")))
+                = None)
+  let%test _ = (resolve (introduce (datum_to_syntax (Dyn(IdT, Id "lambda"))))
+                = Some (Dyn(IdT, Id "lambda")))
 
-  (* assert (
-   *   let dtm = Dyn(ListT, List [ Dyn (IdT, Id "lambda")
-   *                             ; Dyn (ListT, List [ Dyn(IdT, Id "x") ])
-   *                             ; Dyn(IdT, Id "x") ])
-   *   in
-   *   (syntax_to_datum
-   *      (expand
-   *         (add_scope
-   *            (datum_to_syntax dtm)
-   *            core_scope) ~env:empty_env))
-   *   = dtm); *)
+  let%test _ = (env_lookup (empty_env) loc_a
+                = None)
 
-  (* assert (syntax_to_datum
-   *           (expand
-   *              (add_scope
-   *                 (datum_to_syntax
-   *                    (\* '(let-syntax ([one (lambda (stx) (quote-syntax '1))])
-   *                           (one))
-   *                     **\)
-   *                    (Dyn(ListT, List [ Dyn (IdT, Id "let-syntax")
-   *                                     ; Dyn (ListT, List [
-   *                                           Dyn (ListT, List [
-   *                                               Dyn (IdT, Id "one")
-   *                                             ; Dyn (ListT, List [
-   *                                                   Dyn (IdT, Id "lambda")
-   *                                                 ; Dyn (ListT, List [ Dyn (IdT, Id "stx") ])
-   *                                                 ; Dyn (ListT, List [ Dyn (IdT, Id "quote-syntax")
-   *                                                                    ; Dyn (IntT, Int 1) ])
-   *                                                 ])
-   *                                             ])
-   *                                         ])
-   *                                     ; Dyn (ListT, List [ Dyn (IdT, Id "one") ])
-   *                                     ]))) core_scope))
-   *         = Dyn (ListT, List [ Dyn (IdT, Id "quote") ; Dyn (IntT, Int 1) ])); *)
+  let%test _ = (env_lookup (env_extend (empty_env) loc_a (Dyn (IdT, Id "variable"))) loc_a
+                = Some (Dyn (IdT, Id "variable")))
+
+  let%test _ = (let loc_d = add_local_binding ("d", Scopes.of_list [sc1; sc2]) in
+                resolve (Dyn(StxT, Stx ("d", Scopes.of_list [sc1; sc2])))
+                = Some loc_d)
+
+  let%test _ = (let dtm = (s2d "(lambda (x) x)") in
+                (syntax_to_datum
+                   (expand
+                      (add_scope
+                         (datum_to_syntax dtm) core_scope)))
+                = dtm)
+
+  let%test _ = (
+    (try (syntax_to_datum
+            (expand
+               (add_scope
+                  (datum_to_syntax
+                     (s2d "(let-syntax ((one (lambda (stx) (quote-syntax '1)))) (one))")) core_scope)))
+     with Unexpected loc ->
+       begin
+         print_endline loc;
+         raise (Unexpected loc)
+       end)
+    = Dyn (ListT, List [ Dyn (IdT, Id "quote") ; Dyn (IntT, Int 1L) ]))
 
 end)
 
