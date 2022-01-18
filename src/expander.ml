@@ -52,12 +52,10 @@ end
 type stx = symbol * Scopes.t
 
 (* specific to expansion *)
-type _ typ += LocT : Gensym.t data typ
 type _ typ += StxT : stx data typ
 
 (* specific to expansion *)
 type _ data += Stx : stx -> stx data
-type _ data += Loc : Gensym.t -> Gensym.t data
 
 (********************************************
  ** Pretty printing *)
@@ -69,8 +67,6 @@ let print_dyn s =
       Int64.to_string i
     | Dyn (StxT, Stx (e, scopes)) ->
       Printf.sprintf "#<syntax %s>" e
-    | Dyn (LocT, Loc i) ->
-      Gensym.to_string i
     | Dyn (ListT, List ls) ->
       List.map sd ls
       |> List.fold_left (fun a s ->
@@ -224,22 +220,22 @@ let empty_env =
   Env.empty
 
 let variable =
-  Dyn (LocT, Loc (Gensym.gensym ()))
+  Dyn (IdT, Id (Gensym.gensym ()))
 
 let env_extend (* : TODO add type *)
   = fun env k v -> match k with
-    | Dyn(LocT, Loc key) ->
+    | Dyn(IdT, Id key) ->
       Env.add key v env
     | _ -> raise (Unexpected __LOC__)
 
 let env_lookup (* : TODO add type *)
   = fun env bnd -> match bnd with
-    | Dyn(LocT, Loc binding) ->
+    | Dyn(IdT, Id binding) ->
       Env.find_opt binding env
     | _ -> raise (Unexpected __LOC__)
 
 let add_local_binding ((e, scopes) as id) =
-  let key = Dyn(LocT, Loc (Gensym.gensym ~sym:e ())) in
+  let key = Dyn(IdT, Id (Gensym.gensym ~sym:e ())) in
   add_binding id key;
   key
 
@@ -261,15 +257,12 @@ let rec expand ?env:(e = empty_env) s =
 and expand_identifier s env =
   match resolve s with
   | None -> raise (Bad_syntax "free variable: todo")
-  | Some (Dyn(IdT, Id binding)) ->
+  | Some (Dyn(IdT, Id binding) as d) ->
     if CoreIDSet.mem binding core_primitives then
       s
     else if CoreIDSet.mem binding core_forms then
       raise (Bad_syntax "bad syntax: todo")
-    else
-      raise (Unexpected __LOC__)
-  | Some (Dyn(LocT, Loc binding) as d) ->
-    begin match env_lookup env d with
+    else begin match env_lookup env d with
       | None ->
         raise (Bad_syntax "out of context: todo")
       | Some v ->
@@ -292,7 +285,7 @@ and expand_id_application_form (* : TODO add type *)
           s
         | Some (Dyn(IdT, Id s)) ->
           raise (Unexpected __LOC__)
-        | Some (Dyn(LocT, Loc k)) ->
+        | Some (Dyn(IdT, Id k)) ->
           raise (Unexpected __LOC__)
         (* begin match env_lookup env (`Loc k) with
          *   | Some (`Func f) ->
@@ -417,7 +410,7 @@ let%test_module _ = (module struct
                                   ; (Dyn(StxT, Stx ("c", Scopes.empty)))])))
 
   (* Scopes tests *)
-  let nl = fun () -> Dyn (LocT, Loc (Gensym.gensym ()))
+  let nl = fun () -> Dyn (IdT, Id (Gensym.gensym ()))
 
   let sc1 = Scope.fresh ()
   let sc2 = Scope.fresh ()
@@ -525,16 +518,11 @@ let%test_module _ = (module struct
                 = dtm)
 
   let%test _ = (
-    (try (syntax_to_datum
-            (expand
-               (add_scope
-                  (datum_to_syntax
-                     (s2d "(let-syntax ((one (lambda (stx) (quote-syntax '1)))) (one))")) core_scope)))
-     with Unexpected loc ->
-       begin
-         print_endline loc;
-         raise (Unexpected loc)
-       end)
+    (syntax_to_datum
+       (expand
+          (add_scope
+             (datum_to_syntax
+                (s2d "(let-syntax ((one (lambda (stx) (quote-syntax '1)))) (one))")) core_scope)))
     = Dyn (ListT, List [ Dyn (IdT, Id "quote") ; Dyn (IntT, Int 1L) ]))
 
 end)
