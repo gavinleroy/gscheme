@@ -1,0 +1,17 @@
+;;-------------------------------------------
+;;
+;; Gavin Gray 01.2021
+;;
+;; GScheme
+;;
+;;-------------------------------------------
+
+(env
+  (dev
+    (flags (:standard -warn-error -A -w -27))))
+
+(library
+ (name gscm)
+ (libraries angstrom)
+ (inline_tests)
+ (preprocess (pps ppx_inline_test)))
