@@ -9,6 +9,14 @@
 (*                                         *)
 (*******************************************)
 
+(* NOTE FIXME for implementation.
+ * I've used a 'dyn' object for all function, which I dont' like.
+ * This essentially has taken a good static type system from OCaml
+ * and rendered it useless.
+ * GOAL: improve the types defined in types.ml to reflect better scheme
+ * types, allowing for safer macro expansion and evaluation.
+ **)
+
 [@@@ocaml.warning "-8"]
 [@@@ocaml.warning "-11"]
 [@@@ocaml.warning "-26"]
@@ -559,11 +567,28 @@ let%test_module _ = (module struct
                         ; Dyn(IntT, Int 1L) ])
       ])))
 
+  (* macro transformers *)
   let%test _ = (
     expand (introduce (datum_to_syntax (s2d "((quote 0) (quote 1))")))
     = Dyn(ListT, List [ Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope])); Dyn(IntT, Int 0L) ])
                       ; Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope])); Dyn(IntT, Int 1L) ]) ]))
-
+  let transformed_s =
+    apply_transformer (fun s ->
+        match s with
+        | Dyn(ListT, List (_ :: v :: _)) ->
+          Dyn(ListT, List [v; Dyn(StxT, Stx ("x", Scopes.empty))]))
+      (Dyn(ListT, List [ Dyn(StxT, Stx ("m", Scopes.empty))
+                       ; Dyn(StxT, Stx ("f", Scopes.of_list [sc1])) ]))
+  let%test _ = (
+    syntax_to_datum transformed_s
+    = Dyn(ListT, List [ Dyn(IdT, Id "f")
+                      ; Dyn(IdT, Id "x") ]))
+  let%test _ = (
+    let (Dyn(ListT, List (f :: _))) = transformed_s in
+    f = Dyn(StxT, Stx ("f", Scopes.of_list [sc1])))
+  let%test _ = (
+    let (Dyn(ListT, List (_ :: Dyn(StxT, Stx (_, scopes)) :: _))) = transformed_s in
+    Scopes.cardinal scopes = 1)
 end)
 
 [@@@ocaml.warning "+8"]
