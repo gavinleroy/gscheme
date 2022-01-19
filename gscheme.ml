@@ -9,8 +9,11 @@
 open Gscm
 
 let () =
-  (* let line = read_line () in *)
-  match Parser.sexpr_of_string "(+ 1 (some/symbol 3 4 5))" with
-  | Ok _ ->
-    print_endline "Done"
-  | Error str -> print_endline str
+  let line = "(lambda (x) x)" in
+  match Parser.sexpr_of_string line with
+  | Ok ast ->
+    let _ = Expander.expand (* TODO fix this please *)
+        (Expander.sexpr_to_dyn ast) in
+    print_endline "todo"
+  | Error str ->
+    print_endline str
