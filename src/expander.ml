@@ -60,7 +60,10 @@ type _ data += Stx : stx -> stx data
 (********************************************
  ** Pretty printing *)
 
-let print_dyn s =
+let fmt_dyn s =
+  let foldl1 f (l :: ls) =
+    List.fold_left f l ls
+  in
   let rec sd = function
     | Dyn (IdT, Id s) -> s
     | Dyn (IntT, Int i) ->
@@ -69,10 +72,13 @@ let print_dyn s =
       Printf.sprintf "#<syntax %s>" e
     | Dyn (ListT, List ls) ->
       List.map sd ls
-      |> List.fold_left (fun a s ->
-          a ^ " " ^ s) ""
-      |> Printf.sprintf "(%s)"
-  in print_endline (sd s)
+      |> foldl1 (fun a s ->
+          a ^ " " ^ s)
+      |> Printf.sprintf "'(%s)"
+  in sd s
+
+let raise_unexpected loc s =
+  raise (Unexpected (fmt_dyn s ^ loc))
 
 (********************************************
  ** Changing types *)
@@ -126,7 +132,6 @@ and flip_scope s sc =
  ** Global binding table *)
 
 exception Ambiguous_candidate_exn of string
-exception Unexpected of string
 
 let all_bindings =
   Hashtbl.create ~random:false hsh_size
@@ -137,7 +142,7 @@ let add_binding id binding =
 let rec resolve (* : TODO add type *)
   = fun s ->
     let argmax f xs = match xs with
-      | [] -> raise (Unexpected __LOC__)
+      | [] -> raise_unexpected __LOC__ s
       | x :: xs ->
         List.fold_left (fun acc b ->
             if f acc > f b then
@@ -157,7 +162,7 @@ let rec resolve (* : TODO add type *)
            check_unambiguous max_id candidates;
            Some (Hashtbl.find all_bindings max_id)
          end)
-    | v -> raise (Unexpected __LOC__)
+    | v -> raise_unexpected __LOC__ v
 
 and find_all_matching_bindings (e, scopes) =
   Hashtbl.fold (fun (e', scopes') _ acc ->
@@ -226,13 +231,13 @@ let env_extend (* : TODO add type *)
   = fun env k v -> match k with
     | Dyn(IdT, Id key) ->
       Env.add key v env
-    | _ -> raise (Unexpected __LOC__)
+    | _ -> raise_unexpected __LOC__ k
 
 let env_lookup (* : TODO add type *)
   = fun env bnd -> match bnd with
     | Dyn(IdT, Id binding) ->
       Env.find_opt binding env
-    | _ -> raise (Unexpected __LOC__)
+    | _ -> raise_unexpected __LOC__ bnd
 
 let add_local_binding ((e, scopes) as id) =
   let key = Dyn(IdT, Id (Gensym.gensym ~sym:e ())) in
@@ -252,30 +257,32 @@ let rec expand ?env:(e = empty_env) s =
     expand_id_application_form s e
   | Dyn(ListT, _) ->
     expand_app s e
-  | v -> raise (Bad_syntax "bad syntax: todo")
+  | v -> raise (Bad_syntax ("'expand bad syntax: " ^ fmt_dyn v))
 
 and expand_identifier s env =
   match resolve s with
-  | None -> raise (Bad_syntax "free variable: todo")
+  | None ->
+    raise (Bad_syntax ("free variable: " ^ fmt_dyn s))
   | Some (Dyn(IdT, Id binding) as d) ->
     if CoreIDSet.mem binding core_primitives then
       s
     else if CoreIDSet.mem binding core_forms then
-      raise (Bad_syntax "bad syntax: todo")
+      raise (Bad_syntax ("'expand_identifier bad syntax: " ^ fmt_dyn s))
     else begin match env_lookup env d with
       | None ->
-        raise (Bad_syntax "out of context: todo")
+        raise (Bad_syntax ("out of context: " ^ fmt_dyn d))
       | Some v ->
         if v = variable then
           s
         else
-          raise (Bad_syntax "bad syntax: todo")
+          raise (Bad_syntax ("'expand_identifier bad syntax: " ^ fmt_dyn v))
     end
 
 and expand_id_application_form (* : TODO add type *)
   = fun s env -> match s with
-    | Dyn(ListT, List (((Dyn(StxT, Stx id)) as d) :: _)) ->
-      begin match resolve d with
+    | Dyn(ListT, List (id :: _)) ->
+      let binding = resolve id in
+      begin match binding with
         | Some (Dyn(IdT, Id "lambda")) ->
           expand_lambda s env
         | Some (Dyn(IdT, Id "let-syntax")) ->
@@ -283,19 +290,15 @@ and expand_id_application_form (* : TODO add type *)
         | Some (Dyn(IdT, Id "quote"))
         | Some (Dyn(IdT, Id "quote-syntax")) ->
           s
-        | Some (Dyn(IdT, Id s)) ->
-          raise (Unexpected __LOC__)
-        | Some (Dyn(IdT, Id k)) ->
-          raise (Unexpected __LOC__)
-        (* begin match env_lookup env (`Loc k) with
-         *   | Some (`Func f) ->
-         *     expand (apply_transformer v s) env
-         *   | _ -> expand_app s env
-         * end *)
-        | _ -> raise (Unexpected __LOC__)
+        | Some binding ->
+          begin match env_lookup env binding with
+            | Some (Dyn (FuncT, Func f)) ->
+              expand (apply_transformer f s) ~env:env
+            | _ -> expand_app s env
+          end
+        | None -> raise_unexpected __LOC__ id
       end
-    | _ -> raise (Unexpected __LOC__)
-
+    | _ -> raise_unexpected __LOC__ s
 
 and apply_transformer t s =
   let intro_scope = Scope.fresh () in
@@ -318,9 +321,9 @@ and expand_lambda (* : TODO add type *)
           Dyn (ListT, List [ lambda_id
                            ; Dyn (ListT, List [stx_id])
                            ; exp_body])
-        | _ -> raise (Unexpected __LOC__)
+        | _ -> raise_unexpected __LOC__ id
       end
-    | v -> raise (Unexpected __LOC__)
+    | v -> raise_unexpected __LOC__ v
 
 and expand_let_syntax (* : TODO add type *)
   = fun s env ->
@@ -340,42 +343,49 @@ and expand_let_syntax (* : TODO add type *)
           let body_env = env_extend env binding rhs_val in
           expand (add_scope body sc) ~env:body_env
       end
-    | _ -> raise (Unexpected __LOC__)
+    | _ -> raise_unexpected __LOC__ s
 
 and expand_app (* : TODO add type *)
   = fun s env -> match s with
     | Dyn(ListT, List ls) ->
       Dyn(ListT, List (List.map (fun sub_s ->
           expand sub_s ~env:env) ls))
-    | _ -> raise (Unexpected __LOC__)
+    | _ -> raise_unexpected __LOC__ s
 
 (*********************************************)
 
 and eval_for_syntax_binding rhs =
-  eval_compiled (compile (expand rhs ~env:empty_env))
+  expand rhs ~env:empty_env
+  |> compile |> eval_compiled
+
 
 (*********************************************)
 
 (* return a data expr that can be evaluated *)
-and compile (* : type a. a typ -> dyn -> a data *)
+and compile : dyn -> dyn
   = fun s -> match s with
-    | Dyn(ListT, List ( (Dyn (StxT, Stx id) as s') :: _)) ->
+    | Dyn(ListT, List ( ((Dyn (StxT, Stx id) as s') :: ls) as ls')) ->
       begin match resolve s' with
-        | None ->
-          raise (Unexpected __LOC__) (* TODO *)
-        | Some (Dyn(IdT, Id "lambda")) ->
-          raise (Unexpected __LOC__) (* TODO *)
-        | Some (Dyn(IdT, Id "quote")) ->
-          raise (Unexpected __LOC__) (* TODO *)
+        | Some (Dyn(IdT, Id "lambda") as lambda) ->
+          let (Dyn(ListT, List [id])) :: _ = ls in
+          Dyn(ListT, List [ lambda
+                          ; Dyn(ListT, List [resolve id |> Option.get])
+                          ; List.tl ls |> List.hd |> compile ])
+        | Some (Dyn(IdT, Id "quote") as quote) ->
+          Dyn(ListT, List [ quote
+                          ; List.hd ls |> syntax_to_datum ])
         | Some (Dyn(IdT, Id "quote-syntax")) ->
-          raise (Unexpected __LOC__) (* TODO *)
-        | _ -> (* Application *)
-          raise (Unexpected __LOC__) (* TODO *)
+          Dyn(ListT, List [ Dyn(IdT, Id "quote")
+                          ; List.hd ls ])
+        | _ -> Dyn (ListT, List (List.map compile ls'))
       end
     | Dyn(ListT, List ls) ->
-      raise (Unexpected __LOC__) (* TODO *)
-    | Dyn(StxT, Stx id) ->
-      raise (Unexpected __LOC__) (* TODO resolve and compile result *)
+      Dyn (ListT, List (List.map compile ls))
+    | (Dyn(StxT, Stx _) as id) ->
+      begin match resolve id with
+        | Some v -> v
+        | None -> raise_unexpected __LOC__ id
+      end
     | _ -> raise (Bad_syntax "bad syntax after expansion: todo")
 
 and eval_compiled s =
@@ -383,7 +393,7 @@ and eval_compiled s =
   |> function
   | Result.Ok v -> v
   | Result.Error _ ->
-    raise (Unexpected __LOC__)
+    raise_unexpected __LOC__ s
 
 (* short cheap tests to keep everything incrementally working *)
 (* TODO once a real dune project is started move these to a testing dir *)
@@ -395,7 +405,7 @@ let%test_module _ = (module struct
     | Ok ast -> sexpr_to_dyn ast
     | Error s ->
       print_endline s;
-      raise (Unexpected __LOC__)
+      raise_unexpected __LOC__ variable
 
   let _ = bind_core_forms_primitives ()
 
@@ -510,20 +520,49 @@ let%test_module _ = (module struct
                 resolve (Dyn(StxT, Stx ("d", Scopes.of_list [sc1; sc2])))
                 = Some loc_d)
 
+  (* larger expansion tests *)
   let%test _ = (let dtm = (s2d "(lambda (x) x)") in
                 (syntax_to_datum
                    (expand
                       (add_scope
                          (datum_to_syntax dtm) core_scope)))
                 = dtm)
-
   let%test _ = (
     (syntax_to_datum
        (expand
           (add_scope
              (datum_to_syntax
-                (s2d "(let-syntax ((one (lambda (stx) (quote-syntax '1)))) (one))")) core_scope)))
+                (s2d "(let-syntax ((one (lambda (stx)
+                                          (quote-syntax (quote 1)))))
+                        (one))")) core_scope)))
     = Dyn (ListT, List [ Dyn (IdT, Id "quote") ; Dyn (IntT, Int 1L) ]))
+  let%test _ = (
+    expand (Dyn(StxT, Stx ("cons", Scopes.singleton core_scope)))
+    = Dyn(StxT, Stx ("cons", Scopes.singleton core_scope)))
+
+  let%test _ = (
+    expand (Dyn(StxT, Stx ("a", Scopes.of_list [sc1]))) ~env:(env_extend empty_env loc_a variable)
+    = (Dyn(StxT, Stx ("a", Scopes.of_list [sc1]))))
+  let%test _ = (
+    try let _ = expand (Dyn(StxT, Stx ("a", Scopes.empty))) in
+      false
+    with Bad_syntax _ -> true)
+  let%test _ = (
+    expand (Dyn(ListT, List [
+        Dyn(StxT, Stx ("a", Scopes.of_list [sc1]))
+      ; Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope]))
+                        ; Dyn(IntT, Int 1L) ])
+      ])) ~env:(env_extend empty_env loc_a variable)
+    = (Dyn(ListT, List [
+        Dyn(StxT, Stx ("a", Scopes.of_list [sc1]))
+      ; Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope]))
+                        ; Dyn(IntT, Int 1L) ])
+      ])))
+
+  let%test _ = (
+    expand (introduce (datum_to_syntax (s2d "((quote 0) (quote 1))")))
+    = Dyn(ListT, List [ Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope])); Dyn(IntT, Int 0L) ])
+                      ; Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope])); Dyn(IntT, Int 1L) ]) ]))
 
 end)
 

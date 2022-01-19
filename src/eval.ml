@@ -12,36 +12,47 @@
 open Types
 open Result
 
-(* TODO *)
 module Env = struct
   module M = Map.Make(String)
+  type 'a t = 'a M.t
   let lookup env id =
-    M.find id env
-  let extend env id v =
+    M.find_opt id env
+  let extend env id (v : dyn) =
     M.add id v env
   let extend_many env ids vs =
     List.fold_left2 extend env ids vs
   let empty = M.empty
 end
 
-exception Todo
-
-let rec eval ?env:(e = Env.empty) (s : dyn) : (dyn, string) t =
+let rec eval ?env:(e = Env.empty) s =
   match s with
-  | Dyn (IntT, Int i) -> ok s
-  | Dyn (IdT, Id id) ->
+  | Dyn(IntT, Int i) -> ok s
+  | Dyn(IdT, Id id) ->
     begin match Env.lookup e id with
       | Some d -> ok d
       | None -> error "symbol not found: todo"
     end
-  | Dyn (ListT, List [ Dyn (IdT, Id "lambda")
-                     ; Dyn (ListT, List params)
-                     ; body]) ->
-    ok (Dyn (FuncT, Func (fun args ->
-        let id_params = List.map (fun (Dyn(IdT, Id i)) ->
-            i) params
-        in
-        eval body ~env:(Env.extend_many e id_params args))))
-  | Dyn (ListT, List [ Dyn (IdT, Id "quote"); v]) ->
+  | Dyn (FuncT, Func f) -> ok s
+  (* NOTE currently support is only for single argument lambdas *)
+  | Dyn(ListT, List [ Dyn (IdT, Id "lambda")
+                    ; Dyn (ListT, List [(Dyn(IdT, Id param_id))])
+                    ; body]) ->
+    ok (Dyn (FuncT, Func (fun arg ->
+        eval body ~env:(Env.extend e param_id arg)
+        |> function
+        | Ok d -> d
+        | Error s -> raise (Unexpected __LOC__)
+      )))
+  | Dyn(ListT, List [ Dyn (IdT, Id "quote"); v]) ->
     ok v
-(* TODO general application case *)
+  | Dyn(ListT, List (func :: [arg])) ->
+    begin match (eval ~env:e func), (eval ~env:e arg) with
+      | Ok f, Ok arg -> apply f arg
+      | _, _ -> raise (Unexpected __LOC__)
+    end
+  | v -> raise (Unexpected __LOC__)
+
+and apply f v =
+  match f with
+  | Dyn(FuncT, Func f) -> ok (f v)
+  | _ -> raise (Unexpected __LOC__)

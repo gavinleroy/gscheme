@@ -6,6 +6,8 @@
 (*                                         *)
 (*******************************************)
 
+exception Unexpected of string
+
 module Identifier = struct
   type t = string
 end
@@ -21,13 +23,13 @@ type dyn = Dyn : 'a typ * 'a -> dyn
 type _ typ += IdT : id data typ
 type _ typ += ListT : dyn list data typ
 type _ typ += IntT : Int64.t data typ
-type _ typ += FuncT : ('a -> 'b) data typ
+type _ typ += FuncT : (dyn -> dyn) data typ
 
 (* Data shapes allowed in Gscheme *)
 type _ data += Id : id -> id data
 type _ data += Int : Int64.t -> Int64.t data
 type _ data += List : 'a list -> 'a list data
-type _ data += Func : ('a -> 'b) -> ('a -> 'b) data
+type _ data += Func : (dyn -> dyn) -> (dyn -> dyn) data
 
 type sexp =
   | SxprId of id
