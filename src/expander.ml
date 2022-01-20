@@ -25,19 +25,6 @@
 
 open Types
 
-module Scope = struct
-  type t = int
-  let compare = Int.compare
-  let count = ref 0
-  let fresh () =
-    begin
-      incr count;
-      !count
-    end
-end
-
-module Scopes = Set.Make(Scope)
-
 let hsh_size =
   1000
 
@@ -57,33 +44,10 @@ end
 (********************************************
  ** Syntax objects *)
 
-type stx = symbol * Scopes.t
-
-(* specific to expansion *)
-type _ typ += StxT : stx data typ
-
-(* specific to expansion *)
-type _ data += Stx : stx -> stx data
+(* XXX moved to types.ml *)
 
 (********************************************
  ** Pretty printing *)
-
-let fmt_dyn s =
-  let foldl1 f (l :: ls) =
-    List.fold_left f l ls
-  in
-  let rec sd = function
-    | Dyn (IdT, Id s) -> s
-    | Dyn (IntT, Int i) ->
-      Int64.to_string i
-    | Dyn (StxT, Stx (e, scopes)) ->
-      Printf.sprintf "#<syntax %s>" e
-    | Dyn (ListT, List ls) ->
-      List.map sd ls
-      |> foldl1 (fun a s ->
-          a ^ " " ^ s)
-      |> Printf.sprintf "'(%s)"
-  in sd s
 
 let raise_unexpected loc s =
   raise (Unexpected (fmt_dyn s ^ loc))
@@ -91,23 +55,7 @@ let raise_unexpected loc s =
 (********************************************
  ** Changing types *)
 
-let rec datum_to_syntax : dyn -> dyn
-  = fun d -> match d with
-    | Dyn(IdT, Id i) ->
-      Dyn (StxT, Stx (i, Scopes.empty))
-    | Dyn(ListT, List ls) ->
-      Dyn (ListT, List (List.map datum_to_syntax ls))
-    | _ -> d
-
-and syntax_to_datum : dyn -> dyn
-  = fun stx -> match stx with
-    | Dyn(StxT, Stx (id, _)) ->
-      Dyn (IdT, Id id)
-    | Dyn(ListT, List ls) ->
-      Dyn (ListT, List (List.map syntax_to_datum ls))
-    | _ -> stx
-
-and sexpr_to_dyn = function
+let rec sexpr_to_dyn = function
   | SxprId i -> Dyn (IdT, Id i)
   | SxprInt i -> Dyn (IntT, Int i)
   | SxprList l -> Dyn (ListT, List (List.map sexpr_to_dyn l))
@@ -190,21 +138,12 @@ and check_unambiguous (_, scopes) =
 module CoreIDSet = Set.Make(String)
 
 let core_scope = Scope.fresh ()
-let core_forms = CoreIDSet.of_list
-    [ "lambda"
-    ; "let-syntax"
-    ; "quote"
-    ; "quote-syntax" ]
 
-let core_primitives = CoreIDSet.of_list
-    [ "datum->syntax"
-    ; "syntax->datum"
-    ; "syntax-e"
-    ; "list"
-    ; "cons"
-    ; "car"
-    ; "cdr"
-    ; "map" ]
+let core_forms =
+  CoreIDSet.of_list core_forms
+
+let core_primitives =
+  CoreIDSet.of_list core_primitives
 
 let bind_core_forms_primitives
   = fun () ->
@@ -375,9 +314,11 @@ and compile : dyn -> dyn
     | Dyn(ListT, List ( ((Dyn (StxT, Stx id) as s') :: ls) as ls')) ->
       begin match resolve s' with
         | Some (Dyn(IdT, Id "lambda") as lambda) ->
-          let (Dyn(ListT, List [id])) :: _ = ls in
+          let (Dyn(ListT, List ids)) :: _ = ls in
           Dyn(ListT, List [ lambda
-                          ; Dyn(ListT, List [resolve id |> Option.get])
+                          ; Dyn(ListT, List
+                                  (List.map (fun id ->
+                                       resolve id |> Option.get) ids))
                           ; List.tl ls |> List.hd |> compile ])
         | Some (Dyn(IdT, Id "quote") as quote) ->
           Dyn(ListT, List [ quote
