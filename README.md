@@ -7,7 +7,7 @@ The Racket macro expander and the previous *smaller* inspirations are found [her
 
 I will indicate progress here to give a rough estimate of what is accomplished.
 
-- [ ] pico : expander with lambda calculus
+- [X] pico : expander with lambda calculus
 - [ ] nano
 - [ ] mini
 - [ ] micro
