@@ -10,7 +10,7 @@
 (*******************************************)
 
 (* NOTE FIXME for implementation.
- * I've used a 'dyn' object for all function, which I dont' like.
+ * I've used a 'Dyn.t' object for all function, which I dont' like.
  * This essentially has taken a good static type system from OCaml
  * and rendered it useless.
  * GOAL: improve the types defined in types.ml to reflect better scheme
@@ -24,6 +24,7 @@
 [@@@ocaml.warning "-32"]
 
 open Types
+open Dyn
 
 let hsh_size =
   1000
@@ -50,21 +51,13 @@ end
  ** Pretty printing *)
 
 let raise_unexpected loc s =
-  raise (Unexpected (fmt_dyn s ^ loc))
-
-(********************************************
- ** Changing types *)
-
-let rec sexpr_to_dyn = function
-  | SxprId i -> Dyn (IdT, Id i)
-  | SxprInt i -> Dyn (IntT, Int i)
-  | SxprList l -> Dyn (ListT, List (List.map sexpr_to_dyn l))
+  raise (Unexpected (fmt s ^ loc))
 
 (********************************************
  ** Scopes *)
 
 let rec adjust_scope
-  : dyn -> Scope.t -> (Scope.t ->  Scopes.t -> Scopes.t) -> dyn
+  : Dyn.t -> Scope.t -> (Scope.t ->  Scopes.t -> Scopes.t) -> Dyn.t
   = fun s sc op -> match s with
     | Dyn(StxT, Stx (e, scopes)) ->
       Dyn(StxT, Stx (e, op sc scopes))
@@ -204,25 +197,25 @@ let rec expand ?env:(e = empty_env) s =
     expand_id_application_form s e
   | Dyn(ListT, _) ->
     expand_app s e
-  | v -> raise (Bad_syntax ("'expand bad syntax: " ^ fmt_dyn v))
+  | v -> raise (Bad_syntax ("'expand bad syntax: " ^ fmt v))
 
 and expand_identifier s env =
   match resolve s with
   | None ->
-    raise (Bad_syntax ("free variable: " ^ fmt_dyn s))
+    raise (Bad_syntax ("free variable: " ^ fmt s))
   | Some (Dyn(IdT, Id binding) as d) ->
     if CoreIDSet.mem binding core_primitives then
       s
     else if CoreIDSet.mem binding core_forms then
-      raise (Bad_syntax ("'expand_identifier bad syntax: " ^ fmt_dyn s))
+      raise (Bad_syntax ("'expand_identifier bad syntax: " ^ fmt s))
     else begin match env_lookup env d with
       | None ->
-        raise (Bad_syntax ("out of context: " ^ fmt_dyn d))
+        raise (Bad_syntax ("out of context: " ^ fmt d))
       | Some v ->
         if v = variable then
           s
         else
-          raise (Bad_syntax ("'expand_identifier bad syntax: " ^ fmt_dyn v))
+          raise (Bad_syntax ("'expand_identifier bad syntax: " ^ fmt v))
     end
 
 and expand_id_application_form (* : TODO add type *)
@@ -247,11 +240,12 @@ and expand_id_application_form (* : TODO add type *)
       end
     | _ -> raise_unexpected __LOC__ s
 
-and apply_transformer t s =
-  let intro_scope = Scope.fresh () in
-  let intro_s = add_scope s intro_scope in
-  let transformed_s = t intro_s in
-  flip_scope transformed_s intro_scope
+and apply_transformer : (Dyn.t list -> Dyn.t) -> Dyn.t -> Dyn.t
+  = fun t s ->
+    let intro_scope = Scope.fresh () in
+    let intro_s = add_scope s intro_scope in
+    let transformed_s = t [intro_s] in
+    flip_scope transformed_s intro_scope
 
 and expand_lambda (* : TODO add type *)
   = fun s env -> match s with
@@ -309,7 +303,7 @@ and eval_for_syntax_binding rhs =
 (*********************************************)
 
 (* return a data expr that can be evaluated *)
-and compile : dyn -> dyn
+and compile : Dyn.t -> Dyn.t
   = fun s -> match s with
     | Dyn(ListT, List ( ((Dyn (StxT, Stx id) as s') :: ls) as ls')) ->
       begin match resolve s' with
@@ -335,7 +329,7 @@ and compile : dyn -> dyn
         | Some v -> v
         | None -> raise_unexpected __LOC__ id
       end
-    | _ -> raise (Bad_syntax "bad syntax after expansion: todo")
+    | _ -> raise (Bad_syntax ("bad syntax after expansion: " ^ fmt s))
 
 and eval_compiled s =
   Eval.eval s
@@ -351,7 +345,7 @@ let%test_module _ = (module struct
   let s2d s =
     Parser.sexpr_of_string s
     |> function
-    | Ok ast -> sexpr_to_dyn ast
+    | Ok ast -> Dyn.of_sexpr ast
     | Error s ->
       print_endline s;
       raise_unexpected __LOC__ variable
@@ -514,12 +508,13 @@ let%test_module _ = (module struct
     = Dyn(ListT, List [ Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope])); Dyn(IntT, Int 0L) ])
                       ; Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope])); Dyn(IntT, Int 1L) ]) ]))
   let transformed_s =
-    apply_transformer (fun s ->
+    apply_transformer (fun [s] ->
         match s with
-        | Dyn(ListT, List (_ :: v :: _)) ->
+        | Dyn (ListT, List (_ :: v :: _)) ->
           Dyn(ListT, List [v; Dyn(StxT, Stx ("x", Scopes.empty))]))
-      (Dyn(ListT, List [ Dyn(StxT, Stx ("m", Scopes.empty))
-                       ; Dyn(StxT, Stx ("f", Scopes.of_list [sc1])) ]))
+      (make_list [ Dyn(StxT, Stx ("m", Scopes.empty))
+                 ; Dyn(StxT, Stx ("f", Scopes.of_list [sc1])) ])
+
   let%test _ = (
     syntax_to_datum transformed_s
     = Dyn(ListT, List [ Dyn(IdT, Id "f")

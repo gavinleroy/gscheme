@@ -8,16 +8,18 @@
 
 exception Unexpected of string
 
+let foldl1 f l  =
+  match l with
+  | (l :: ls) ->
+    List.fold_left f l ls
+  | _ -> raise (Unexpected "foldl1 received empty list")
+
 module Identifier = struct
   type t = string
 end
 
 type id = Identifier.t
 type symbol = Identifier.t
-
-type _ typ = ..
-type _ data = ..
-type dyn = Dyn : 'a typ * 'a -> dyn
 
 module Scope = struct
   type t = int
@@ -30,27 +32,98 @@ module Scope = struct
     end
 end
 
+type sexp =
+  | SxprId of id
+  | SxprBool of bool
+  | SxprInt of Int64.t
+  | SxprList of sexp list
+
 module Scopes = Set.Make(Scope)
 
 type stx = symbol * Scopes.t
 
-(* Types allowed in gscheme *)
-type _ typ += IdT : id data typ
-type _ typ += ListT : dyn list data typ
-type _ typ += IntT : Int64.t data typ
-type _ typ += FuncT : (dyn -> dyn) data typ
-(* specific to expansion *)
-type _ typ += StxT : stx data typ
+module Dyn = struct
 
-(* Data shapes allowed in Gscheme *)
-type _ data += Id : id -> id data
-type _ data += Int : Int64.t -> Int64.t data
-type _ data += List : 'a list -> 'a list data
-type _ data += Func : (dyn -> dyn) -> (dyn -> dyn) data
-(* specific to expansion *)
-type _ data += Stx : stx -> stx data
+  type _ typ =
+    | BoolT : bool data typ
+    | IntT : Int64.t data typ
+    | IdT : id data typ
+    | ListT : t list data typ
+    | FuncT : (t list -> t) data typ
+    | StxT : stx data typ
 
-let rec datum_to_syntax : dyn -> dyn
+  and _ data =
+    | Bool : bool -> bool data
+    | Int : Int64.t -> Int64.t data
+    | Id : id -> id data
+    | List : 'a list -> 'a list data
+    | Func : (t list -> t) -> (t list -> t) data
+    (* specific to expansion *)
+    | Stx : stx -> stx data
+
+  and t = Dyn : 'a typ * 'a -> t
+
+  type (_, _) eq = Eq : ('a, 'a) eq
+
+  let is_id = function
+    | Dyn (IdT, Id _) -> true
+    | _ -> false
+  let is_bool = function
+    | Dyn (BoolT, Bool _) -> true
+    | _ -> false
+  let is_int = function
+    | Dyn (IntT, Int _) -> true
+    | _ -> false
+  let is_list = function
+    | Dyn (ListT, List _) -> true
+    | _ -> false
+  let is_func = function
+    | Dyn (FuncT, Func _) -> true
+    | _ -> false
+  let is_stx = function
+    | Dyn (StxT, Stx _) -> true
+    | _ -> false
+
+  let make_id id = Dyn (IdT, Id id)
+  let make_int i = Dyn (IntT, Int i)
+  let make_list l = Dyn (ListT, List l)
+  let make_func f = Dyn (FuncT, Func f)
+  let make_stx s = Dyn (StxT, Stx s)
+
+  let rec unwrap_int = function
+    | Dyn (IntT, Int i) -> i
+    | s -> raise (Unexpected ("expected integer but got " ^ fmt s))
+  and unwrap_id = function
+    | Dyn (IdT, Id id) -> id
+    | s -> raise (Unexpected ("expected identifier but got " ^ fmt s))
+
+  and of_sexpr = function
+    | SxprId i -> Dyn (IdT, Id i)
+    | SxprInt i -> Dyn (IntT, Int i)
+    | SxprBool b -> Dyn (BoolT, Bool b)
+    | SxprList l -> Dyn (ListT, List (List.map of_sexpr l))
+
+  and fmt s =
+    let rec sd = function
+      | Dyn (IdT, Id s) -> s
+      | Dyn (IntT, Int i) ->
+        Int64.to_string i
+      | Dyn (BoolT, Bool b) ->
+        if b then "#t" else "#f"
+      | Dyn (FuncT, Func _) ->
+        "#<procedure>"
+      | Dyn (StxT, Stx (e, scopes)) ->
+        Printf.sprintf "#<syntax %s>" e
+      | Dyn (ListT, List ls) ->
+        List.map sd ls
+        |> foldl1 (fun a s ->
+            a ^ " " ^ s)
+        |> Printf.sprintf "'(%s)"
+      | _ -> raise (Unexpected "fmt_dyn unexpected object")
+    in sd s
+end
+
+let rec datum_to_syntax : Dyn.t -> Dyn.t
   = fun d -> match d with
     | Dyn(IdT, Id i) ->
       Dyn (StxT, Stx (i, Scopes.empty))
@@ -58,38 +131,13 @@ let rec datum_to_syntax : dyn -> dyn
       Dyn (ListT, List (List.map datum_to_syntax ls))
     | _ -> d
 
-and syntax_to_datum : dyn -> dyn
+and syntax_to_datum : Dyn.t -> Dyn.t
   = fun stx -> match stx with
     | Dyn(StxT, Stx (id, _)) ->
       Dyn (IdT, Id id)
     | Dyn(ListT, List ls) ->
       Dyn (ListT, List (List.map syntax_to_datum ls))
     | _ -> stx
-
-let fmt_dyn s =
-  let foldl1 f (l :: ls) =
-    List.fold_left f l ls
-  in
-  let rec sd = function
-    | Dyn (IdT, Id s) -> s
-    | Dyn (IntT, Int i) ->
-      Int64.to_string i
-    | Dyn (FuncT, Func _) ->
-      "#<procedure>"
-    | Dyn (StxT, Stx (e, scopes)) ->
-      Printf.sprintf "#<syntax %s>" e
-    | Dyn (ListT, List ls) ->
-      List.map sd ls
-      |> foldl1 (fun a s ->
-          a ^ " " ^ s)
-      |> Printf.sprintf "'(%s)"
-    | _ -> raise (Unexpected "fmt_dyn unexpected object")
-  in sd s
-
-type sexp =
-  | SxprId of id
-  | SxprInt of Int64.t
-  | SxprList of sexp list
 
 let core_forms = [ "lambda"
                  ; "let-syntax"

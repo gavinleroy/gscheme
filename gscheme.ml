@@ -9,16 +9,16 @@
 open Gscm
 
 let () =
-  let line = "((lambda (x) x) 1)" in
+  let line = "(map (lambda (x) (* x 2)) '(1 2 3 4))" in
   match Parser.sexpr_of_string line with
   | Ok ast ->
     (* TODO fix me pls *)
-    Expander.sexpr_to_dyn ast
+    Types.Dyn.of_sexpr ast
     (* |> Types.datum_to_syntax
      * |> Expander.expand *)
     |> Eval.eval
     |> Result.get_ok
-    |> Types.fmt_dyn
+    |> Types.Dyn.fmt
     |> print_endline
   | Error str ->
     print_endline str
