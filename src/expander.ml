@@ -10,7 +10,7 @@
 (*******************************************)
 
 (* NOTE FIXME for implementation.
- * I've used a 'Dyn.t' object for all function, which I dont' like.
+ * I've used a 'dyn' object for all function, which I dont' like.
  * This essentially has taken a good static type system from OCaml
  * and rendered it useless.
  * GOAL: improve the types defined in types.ml to reflect better scheme
@@ -24,7 +24,7 @@
 [@@@ocaml.warning "-32"]
 
 open Types
-open Dyn
+module U = Util
 
 let hsh_size =
   1000
@@ -50,14 +50,15 @@ end
 (********************************************
  ** Pretty printing *)
 
+(* TODO use the exception handling *)
 let raise_unexpected loc s =
-  raise (Unexpected (fmt s ^ loc))
+  raise (Unexpected loc)
 
 (********************************************
  ** Scopes *)
 
 let rec adjust_scope
-  : Dyn.t -> Scope.t -> (Scope.t ->  Scopes.t -> Scopes.t) -> Dyn.t
+  : dyn -> Scope.t -> (Scope.t ->  Scopes.t -> Scopes.t) -> dyn
   = fun s sc op -> match s with
     | Dyn(StxT, Stx (e, scopes)) ->
       Dyn(StxT, Stx (e, op sc scopes))
@@ -197,25 +198,25 @@ let rec expand ?env:(e = empty_env) s =
     expand_id_application_form s e
   | Dyn(ListT, _) ->
     expand_app s e
-  | v -> raise (Bad_syntax ("'expand bad syntax: " ^ fmt v))
+  | v -> raise (Bad_syntax ("'expand bad syntax: "))
 
 and expand_identifier s env =
   match resolve s with
   | None ->
-    raise (Bad_syntax ("free variable: " ^ fmt s))
+    raise (Bad_syntax ("free variable: "))
   | Some (Dyn(IdT, Id binding) as d) ->
     if CoreIDSet.mem binding core_primitives then
       s
     else if CoreIDSet.mem binding core_forms then
-      raise (Bad_syntax ("'expand_identifier bad syntax: " ^ fmt s))
+      raise (Bad_syntax ("'expand_identifier bad syntax: "))
     else begin match env_lookup env d with
       | None ->
-        raise (Bad_syntax ("out of context: " ^ fmt d))
+        raise (Bad_syntax ("out of context: "))
       | Some v ->
         if v = variable then
           s
         else
-          raise (Bad_syntax ("'expand_identifier bad syntax: " ^ fmt v))
+          raise (Bad_syntax ("'expand_identifier bad syntax: "))
     end
 
 and expand_id_application_form (* : TODO add type *)
@@ -232,7 +233,7 @@ and expand_id_application_form (* : TODO add type *)
           s
         | Some binding ->
           begin match env_lookup env binding with
-            | Some (Dyn (FuncT, Func f)) ->
+            | Some (Dyn (LambT, Lamb f)) ->
               expand (apply_transformer f s) ~env:env
             | _ -> expand_app s env
           end
@@ -240,7 +241,7 @@ and expand_id_application_form (* : TODO add type *)
       end
     | _ -> raise_unexpected __LOC__ s
 
-and apply_transformer : (Dyn.t list -> Dyn.t) -> Dyn.t -> Dyn.t
+and apply_transformer : (dyn list -> dyn) -> dyn -> dyn
   = fun t s ->
     let intro_scope = Scope.fresh () in
     let intro_s = add_scope s intro_scope in
@@ -303,7 +304,7 @@ and eval_for_syntax_binding rhs =
 (*********************************************)
 
 (* return a data expr that can be evaluated *)
-and compile : Dyn.t -> Dyn.t
+and compile : dyn -> dyn
   = fun s -> match s with
     | Dyn(ListT, List ( ((Dyn (StxT, Stx id) as s') :: ls) as ls')) ->
       begin match resolve s' with
@@ -316,7 +317,7 @@ and compile : Dyn.t -> Dyn.t
                           ; List.tl ls |> List.hd |> compile ])
         | Some (Dyn(IdT, Id "quote") as quote) ->
           Dyn(ListT, List [ quote
-                          ; List.hd ls |> syntax_to_datum ])
+                          ; List.hd ls |> U.syntax_to_datum ])
         | Some (Dyn(IdT, Id "quote-syntax")) ->
           Dyn(ListT, List [ Dyn(IdT, Id "quote")
                           ; List.hd ls ])
@@ -329,7 +330,7 @@ and compile : Dyn.t -> Dyn.t
         | Some v -> v
         | None -> raise_unexpected __LOC__ id
       end
-    | _ -> raise (Bad_syntax ("bad syntax after expansion: " ^ fmt s))
+    | _ -> raise (Bad_syntax ("bad syntax after expansion: "))
 
 and eval_compiled s =
   Eval.eval s
@@ -345,19 +346,18 @@ let%test_module _ = (module struct
   let s2d s =
     Parser.sexpr_of_string s
     |> function
-    | Ok ast -> Dyn.of_sexpr ast
+    | Ok ast -> Util.dyn_of_sexpr ast
     | Error s ->
-      print_endline s;
       raise_unexpected __LOC__ variable
 
   let _ = bind_core_forms_primitives ()
 
   (* Datum / syntax tests *)
-  let%test _ = (datum_to_syntax (s2d "a")
+  let%test _ = (U.datum_to_syntax (s2d "a")
                 = (Dyn(StxT, Stx ("a", Scopes.empty))))
-  let%test _ = (datum_to_syntax (s2d "1")
+  let%test _ = (U.datum_to_syntax (s2d "1")
                 = (Dyn(IntT, Int 1L)))
-  let%test _ = (datum_to_syntax (s2d "(a b c)")
+  let%test _ = (U.datum_to_syntax (s2d "(a b c)")
                 = (Dyn(ListT, List[ (Dyn(StxT, Stx ("a", Scopes.empty)))
                                   ; (Dyn(StxT, Stx ("b", Scopes.empty)))
                                   ; (Dyn(StxT, Stx ("c", Scopes.empty)))])))
@@ -378,15 +378,15 @@ let%test_module _ = (module struct
 
   (* adding flipping scopes *)
   let%test _ = ((add_scope
-                   (datum_to_syntax (s2d "x"))
+                   (U.datum_to_syntax (s2d "x"))
                    sc1)
                 = (Dyn(StxT, Stx ("x", Scopes.singleton sc1))))
-  let%test _ = ((add_scope (datum_to_syntax (s2d "(x (y))")) sc1)
+  let%test _ = ((add_scope (U.datum_to_syntax (s2d "(x (y))")) sc1)
                 = Dyn (ListT, List [Dyn (StxT, Stx ("x", Scopes.singleton sc1))
                                    ; Dyn (ListT, List [ Dyn(StxT, Stx ("y", Scopes.singleton sc1))])]))
-  let%test _ = (add_scope (add_scope (datum_to_syntax (s2d "x")) sc1) sc2
+  let%test _ = (add_scope (add_scope (U.datum_to_syntax (s2d "x")) sc1) sc2
                 = Dyn (StxT, Stx ("x", Scopes.of_list [sc1; sc2])))
-  let%test _ = (add_scope (add_scope (datum_to_syntax (s2d "x")) sc1) sc1
+  let%test _ = (add_scope (add_scope (U.datum_to_syntax (s2d "x")) sc1) sc1
                 = Dyn (StxT, Stx ("x", Scopes.singleton sc1)))
   let%test _ = (flip_scope (Dyn (StxT, Stx ("x", Scopes.singleton sc1))) sc2
                 = (Dyn (StxT, Stx ("x", Scopes.of_list [sc1; sc2]))))
@@ -432,8 +432,8 @@ let%test_module _ = (module struct
       type t = (string * Scopes.t)
       let compare (s, ss) (s', ss') =
         if s = s' then
-          compare ss ss'
-        else compare s s' end)
+          Scopes.compare ss ss'
+        else String.compare s s' end)
 
   let%test _ = (let open S in
                 equal (find_all_matching_bindings b_in |> of_list)
@@ -448,9 +448,9 @@ let%test_module _ = (module struct
                   false
                 with Ambiguous_candidate_exn _ ->
                   true)
-  let%test _ = (resolve (datum_to_syntax (Dyn(IdT, Id "lambda")))
+  let%test _ = (resolve (U.datum_to_syntax (Dyn(IdT, Id "lambda")))
                 = None)
-  let%test _ = (resolve (introduce (datum_to_syntax (Dyn(IdT, Id "lambda"))))
+  let%test _ = (resolve (introduce (U.datum_to_syntax (Dyn(IdT, Id "lambda"))))
                 = Some (Dyn(IdT, Id "lambda")))
 
   let%test _ = (env_lookup (empty_env) loc_a
@@ -465,20 +465,24 @@ let%test_module _ = (module struct
 
   (* larger expansion tests *)
   let%test _ = (let dtm = (s2d "(lambda (x) x)") in
-                (syntax_to_datum
+                (U.syntax_to_datum
                    (expand
                       (add_scope
-                         (datum_to_syntax dtm) core_scope)))
+                         (U.datum_to_syntax dtm) core_scope)))
                 = dtm)
+
   let%test _ = (
-    (syntax_to_datum
+    (U.syntax_to_datum
        (expand
           (add_scope
-             (datum_to_syntax
+             (U.datum_to_syntax
                 (s2d "(let-syntax ((one (lambda (stx)
                                           (quote-syntax (quote 1)))))
-                        (one))")) core_scope)))
+                        (one))")) core_scope))
+     |> (fun dyn -> begin U.fmt dyn |> print_endline; dyn end)
+    )
     = Dyn (ListT, List [ Dyn (IdT, Id "quote") ; Dyn (IntT, Int 1L) ]))
+
   let%test _ = (
     expand (Dyn(StxT, Stx ("cons", Scopes.singleton core_scope)))
     = Dyn(StxT, Stx ("cons", Scopes.singleton core_scope)))
@@ -504,7 +508,7 @@ let%test_module _ = (module struct
 
   (* macro transformers *)
   let%test _ = (
-    expand (introduce (datum_to_syntax (s2d "((quote 0) (quote 1))")))
+    expand (introduce (U.datum_to_syntax (s2d "((quote 0) (quote 1))")))
     = Dyn(ListT, List [ Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope])); Dyn(IntT, Int 0L) ])
                       ; Dyn(ListT, List [ Dyn(StxT, Stx ("quote", Scopes.of_list [core_scope])); Dyn(IntT, Int 1L) ]) ]))
   let transformed_s =
@@ -512,11 +516,11 @@ let%test_module _ = (module struct
         match s with
         | Dyn (ListT, List (_ :: v :: _)) ->
           Dyn(ListT, List [v; Dyn(StxT, Stx ("x", Scopes.empty))]))
-      (make_list [ Dyn(StxT, Stx ("m", Scopes.empty))
-                 ; Dyn(StxT, Stx ("f", Scopes.of_list [sc1])) ])
+      (U.make_list [ Dyn(StxT, Stx ("m", Scopes.empty))
+                   ; Dyn(StxT, Stx ("f", Scopes.of_list [sc1])) ])
 
   let%test _ = (
-    syntax_to_datum transformed_s
+    U.syntax_to_datum transformed_s
     = Dyn(ListT, List [ Dyn(IdT, Id "f")
                       ; Dyn(IdT, Id "x") ]))
   let%test _ = (

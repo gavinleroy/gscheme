@@ -6,13 +6,10 @@
 (*                                         *)
 (*******************************************)
 
-exception Unexpected of string
+include Result
 
-let foldl1 f l  =
-  match l with
-  | (l :: ls) ->
-    List.fold_left f l ls
-  | _ -> raise (Unexpected "foldl1 received empty list")
+(* signals an internal error FIXME remove *)
+exception Unexpected of string
 
 module Identifier = struct
   type t = string
@@ -32,113 +29,6 @@ module Scope = struct
     end
 end
 
-type sexp =
-  | SxprId of id
-  | SxprBool of bool
-  | SxprInt of Int64.t
-  | SxprList of sexp list
-
-module Scopes = Set.Make(Scope)
-
-type stx = symbol * Scopes.t
-
-module Dyn = struct
-
-  type _ typ =
-    | BoolT : bool data typ
-    | IntT : Int64.t data typ
-    | IdT : id data typ
-    | ListT : t list data typ
-    | FuncT : (t list -> t) data typ
-    | StxT : stx data typ
-
-  and _ data =
-    | Bool : bool -> bool data
-    | Int : Int64.t -> Int64.t data
-    | Id : id -> id data
-    | List : 'a list -> 'a list data
-    | Func : (t list -> t) -> (t list -> t) data
-    (* specific to expansion *)
-    | Stx : stx -> stx data
-
-  and t = Dyn : 'a typ * 'a -> t
-
-  type (_, _) eq = Eq : ('a, 'a) eq
-
-  let is_id = function
-    | Dyn (IdT, Id _) -> true
-    | _ -> false
-  let is_bool = function
-    | Dyn (BoolT, Bool _) -> true
-    | _ -> false
-  let is_int = function
-    | Dyn (IntT, Int _) -> true
-    | _ -> false
-  let is_list = function
-    | Dyn (ListT, List _) -> true
-    | _ -> false
-  let is_func = function
-    | Dyn (FuncT, Func _) -> true
-    | _ -> false
-  let is_stx = function
-    | Dyn (StxT, Stx _) -> true
-    | _ -> false
-
-  let make_id id = Dyn (IdT, Id id)
-  let make_int i = Dyn (IntT, Int i)
-  let make_list l = Dyn (ListT, List l)
-  let make_func f = Dyn (FuncT, Func f)
-  let make_stx s = Dyn (StxT, Stx s)
-
-  let rec unwrap_int = function
-    | Dyn (IntT, Int i) -> i
-    | s -> raise (Unexpected ("expected integer but got " ^ fmt s))
-  and unwrap_id = function
-    | Dyn (IdT, Id id) -> id
-    | s -> raise (Unexpected ("expected identifier but got " ^ fmt s))
-
-  and of_sexpr = function
-    | SxprId i -> Dyn (IdT, Id i)
-    | SxprInt i -> Dyn (IntT, Int i)
-    | SxprBool b -> Dyn (BoolT, Bool b)
-    | SxprList l -> Dyn (ListT, List (List.map of_sexpr l))
-
-  and fmt s =
-    let rec sd = function
-      | Dyn (IdT, Id s) -> s
-      | Dyn (IntT, Int i) ->
-        Int64.to_string i
-      | Dyn (BoolT, Bool b) ->
-        if b then "#t" else "#f"
-      | Dyn (FuncT, Func _) ->
-        "#<procedure>"
-      | Dyn (StxT, Stx (e, scopes)) ->
-        Printf.sprintf "#<syntax %s>" e
-      | Dyn (ListT, List ls) ->
-        List.map sd ls
-        |> foldl1 (fun a s ->
-            a ^ " " ^ s)
-        |> Printf.sprintf "'(%s)"
-      | _ -> raise (Unexpected "fmt_dyn unexpected object")
-    in sd s
-end
-
-let rec datum_to_syntax : Dyn.t -> Dyn.t
-  = fun d -> match d with
-    | Dyn(IdT, Id i) ->
-      Dyn (StxT, Stx (i, Scopes.empty))
-    | Dyn(ListT, List ls) ->
-      Dyn (ListT, List (List.map datum_to_syntax ls))
-    | _ -> d
-
-and syntax_to_datum : Dyn.t -> Dyn.t
-  = fun stx -> match stx with
-    | Dyn(StxT, Stx (id, _)) ->
-      Dyn (IdT, Id id)
-    | Dyn(ListT, List ls) ->
-      Dyn (ListT, List (List.map syntax_to_datum ls))
-    | _ -> stx
-
 let core_forms = [ "lambda"
                  ; "let-syntax"
                  ; "quote"
@@ -152,3 +42,125 @@ let core_primitives = [ "datum->syntax"
                       ; "car"
                       ; "cdr"
                       ; "map" ]
+
+type sexp =
+  | SexpId of id
+  | SexpBool of bool
+  | SexpInt of int64
+  | SexpList of sexp list
+
+module Scopes = Set.Make(Scope)
+
+type stx = symbol * Scopes.t
+
+type _ typ =
+  | BoolT : bool data typ
+  | IntT : int64 data typ
+  | IdT : id data typ
+  | StxT : stx data typ
+  | ListT : dyn list data typ
+  (* lambdas are user defined functions *)
+  | LambT : (dyn list -> dyn) data typ
+  (* Procedures are primitive functions *)
+  | ProcT : (dyn list -> dyn maybe_exn) data typ
+
+and _ data =
+  | Bool : bool -> bool data
+  | Int : int64 -> int64 data
+  | Id : id -> id data
+  | Stx : stx -> stx data
+  | List : 'a list -> 'a list data
+  | Lamb : (dyn list -> dyn) -> (dyn list -> dyn) data
+  | Proc : (dyn list -> dyn maybe_exn) -> (dyn list -> dyn maybe_exn) data
+
+and (_, _) eq = Eq : ('a, 'a) eq
+
+and dyn = Dyn : 'a typ * 'a -> dyn
+
+and runtime_exn =
+  | Runtime_error of string
+  | Arity_mismatch of (int * dyn)
+  | Type_mismatch of (string * dyn)
+  | Free_var of (string * string)
+  | Parser of string
+  (* | Bad_form (string * dyn) *)
+
+and 'a maybe_exn = ('a, runtime_exn) Result.t
+
+(* module rec Exception : sig
+ *
+ *   type t = Hidden.runtime_exn
+ *   and 'a maybe_exn = 'a Hidden.or_exn
+ *
+ *   val to_string : t -> string
+ *   val trap_exn : 'a maybe_exn -> ('a, string) Result.t
+ *   val ( >>= ) : ('a, 'e) Result.t -> ('a -> ('b, 'e) Result.t) -> ('b, 'e) Result.t
+ *   val ( >>| ) : ('a -> 'b) -> ('a, 'e) Result.t -> ('b, 'e) Result.t
+ *   val map_m : ('a -> ('b, 'e) Result.t) -> 'a list -> ('b list, 'e) Result.t
+ *
+ *   (\* FIXME there should be a better way ... from the results module *\)
+ *
+ *   val ok : 'a -> ('a, 'e) Stdlib.result
+ *   val error : 'e -> ('a, 'e) Stdlib.result
+ *   val value : ('a, 'e) Stdlib.result -> default:'a -> 'a
+ *   val get_ok : ('a, 'e) Stdlib.result -> 'a
+ *   val get_error : ('a, 'e) Stdlib.result -> 'e
+ *   val bind :
+ *     ('a, 'e) Stdlib.result ->
+ *     ('a -> ('b, 'e) Stdlib.result) -> ('b, 'e) Stdlib.result
+ *   val join :
+ *     (('a, 'e) Stdlib.result, 'e) Stdlib.result -> ('a, 'e) Stdlib.result
+ *   val map : ('a -> 'b) -> ('a, 'e) Stdlib.result -> ('b, 'e) Stdlib.result
+ *   val map_error :
+ *     ('e -> 'f) -> ('a, 'e) Stdlib.result -> ('a, 'f) Stdlib.result
+ *   val fold :
+ *     ok:('a -> 'c) -> error:('e -> 'c) -> ('a, 'e) Stdlib.result -> 'c
+ *   val iter : ('a -> unit) -> ('a, 'e) Stdlib.result -> unit
+ *   val iter_error : ('e -> unit) -> ('a, 'e) Stdlib.result -> unit
+ *   val is_ok : ('a, 'e) Stdlib.result -> bool
+ *   val is_error : ('a, 'e) Stdlib.result -> bool
+ *   val equal :
+ *     ok:('a -> 'a -> bool) ->
+ *     error:('e -> 'e -> bool) ->
+ *     ('a, 'e) Stdlib.result -> ('a, 'e) Stdlib.result -> bool
+ *   val compare :
+ *     ok:('a -> 'a -> int) ->
+ *     error:('e -> 'e -> int) ->
+ *     ('a, 'e) Stdlib.result -> ('a, 'e) Stdlib.result -> int
+ *   val to_option : ('a, 'e) Stdlib.result -> 'a option
+ *   val to_list : ('a, 'e) Stdlib.result -> 'a list
+ *   val to_seq : ('a, 'e) Stdlib.result -> 'a Stdlib.Seq.t
+ *
+ * end = struct *)
+
+let to_string = function
+  | Runtime_error _
+  | Arity_mismatch _
+  | Type_mismatch _
+  | Free_var _
+  | Parser _ -> "TODO improve exn show"
+
+let trap_exn : type a. a maybe_exn -> (a, string) Result.t
+  = fun s -> Result.map_error to_string s
+
+(* TODO other control flow exn primitives *)
+
+let ( >>= ) = Result.bind
+let ( >>| ) = Result.map
+
+let map_m : type a b e. (a -> (b, e) Result.t) -> a list -> (b list, e) Result.t
+  = fun f ls ->
+    List.fold_right
+      (fun newr acc ->
+         acc >>= (fun acc_ls ->
+             f newr >>= (fun v ->
+                 ok (v :: acc_ls)))) ls (ok [])
+(* end *)
+
+(* and Dyn : sig
+ *
+ *   type t = Hidden.dyn
+ *   and 'a typ = 'a Hidden.typ
+ *   and 'a data = 'a Hidden.data
+ *
+ * end = Dyn *)
