@@ -61,14 +61,15 @@ let parse_atom =
 let parse_expr =
   fix (fun parse_expr ->
       let parse_list =
-        (lex (char '(')
-         *> sep_by whitespace parse_expr
-         <* lex (char ')'))
-        >>| fun ls -> T.SexpList ls in
+        lex (char '(') *> sep_by whitespace parse_expr <* lex (char ')')
+        >>| fun ls -> T.SexpList ls
 
-      (* TODO parse_dotted_list = ... *)
+      and parse_dotted =
+        let%bind front = lex (char '(') *> sep_by whitespace parse_expr in
+        let%map last = lex (char '.') *> lex parse_expr <* char ')' in
+        T.SexpDotted (front, last)
 
-      let parse_quoted =
+      and parse_quoted =
         (char '\'' *> parse_expr)
         >>| fun e ->
         (T.SexpList [
@@ -77,7 +78,9 @@ let parse_expr =
       choice [ lex parse_atom
              ; lex parse_int
              ; lex parse_quoted
-             ; lex parse_list ])
+             ; lex parse_dotted
+             ; lex parse_list
+             ])
 
 let parse_prog =
   whitespace *> parse_expr

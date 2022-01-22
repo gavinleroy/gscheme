@@ -21,40 +21,78 @@ let rec unwrap_int : T.dyn -> int64 T.maybe_exn
     | Dyn (IntT, Int i) -> T.ok i
     | s -> T.error (T.Type_mismatch ("int", s))
 
+and unwrap_bool : T.dyn -> bool T.maybe_exn
+  = fun s ->
+    let open T in
+    match s with
+    | Dyn (BoolT, Bool b) -> T.ok b
+    | s -> T.error (T.Type_mismatch ("bool", s))
+
 and unwrap_id : T.dyn -> T.id T.maybe_exn
   = fun s ->
     let open T in
     match s with
     | Dyn (IdT, Id id) -> T.ok id
-    | s -> T.error (Type_mismatch ("string", s))
+    | s -> error (Type_mismatch ("string", s))
 
-and dyn_of_sexpr : T.sexp -> T.dyn
+and unwrap_proc : T.dyn -> (T.dyn list -> T.dyn T.maybe_exn) T.maybe_exn
+  = fun s ->
+    let open T in
+    match s with
+    | Dyn (ProcT, Proc f) -> ok f
+    | _ -> error (Type_mismatch ("procedure", s))
+
+and dyn_of_sexp : T.sexp -> T.dyn
   = function
-    | SexpId i -> Dyn (IdT, Id i)
-    | SexpInt i -> Dyn (IntT, Int i)
-    | SexpBool b -> Dyn (BoolT, Bool b)
-    | SexpList l -> Dyn (ListT, List (List.map dyn_of_sexpr l))
+    | SexpId i -> make_id i
+    | SexpInt i -> make_int i
+    | SexpBool b -> make_bool b
+    | SexpList l ->
+      make_list (List.map dyn_of_sexp l)
+    | SexpDotted (hd, tl) ->
+      let hd = List.map dyn_of_sexp hd in
+      begin match dyn_of_sexp tl with
+        | Dyn (DottedT, Dotted (hd', tl)) ->
+          make_dotted (hd @ hd', tl)
+        | Dyn (ListT, List ls) ->
+          make_list (hd @ ls)
+        | tl -> make_dotted (hd, tl)
+      end
 
 and fmt s =
   let open T in
+  let b = ref 0 in
   let rec sd = function
     | Dyn (IdT, Id s) -> s
     | Dyn (IntT, Int i) ->
       Int64.to_string i
     | Dyn (BoolT, Bool b) ->
       if b then "#t" else "#f"
-
     | s when is_func s ->
-      "#<procedure>"
-
+      "#<procedure>" (* TODO add name if named ... *)
     | Dyn (StxT, Stx (e, scopes)) ->
       Printf.sprintf "#<syntax %s>" e
+
+    | Dyn (ListT, List [Dyn (IdT, Id "quote"); rhs]) ->
+      sd rhs |> Printf.sprintf "'%s"
+
     | Dyn (ListT, List ls) ->
-      List.map sd ls
-      |> foldl1 (fun a s ->
-          a ^ " " ^ s)
-      |> Printf.sprintf "'(%s)"
+      incr b;
+      many ls |> Printf.sprintf "%s(%s)"
+        (if !b <> 1 then "" else "'")
+
+    | Dyn (DottedT, Dotted (ls, tl)) ->
+      incr b;
+      let fs = many ls
+      and l = sd tl in
+      Printf.sprintf "%s(%s . %s)"
+        (if !b <> 1 then "" else "'")
+        fs l
+
     | _ -> raise (T.Unexpected "fmt_dyn unexpected object")
+
+  and many ls = List.map sd ls |> foldl1 (fun a s ->
+      a ^ " " ^ s)
   in sd s
 
 and is_id = function
@@ -88,11 +126,15 @@ and is_stx = function
   | T.Dyn (StxT, Stx _) -> true
   | _ -> false
 
+and make_bool b = T.Dyn (BoolT, Bool b)
+
 and make_id id = T.Dyn (IdT, Id id)
 
 and make_int i = T.Dyn (IntT, Int i)
 
 and make_list l = T.Dyn (ListT, List l)
+
+and make_dotted p = T.Dyn (DottedT, Dotted p)
 
 and make_lambda f = T.Dyn (LambT, Lamb f)
 

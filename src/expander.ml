@@ -346,9 +346,8 @@ let%test_module _ = (module struct
   let s2d s =
     Parser.sexpr_of_string s
     |> function
-    | Ok ast -> Util.dyn_of_sexpr ast
-    | Error s ->
-      raise_unexpected __LOC__ variable
+    | Ok ast -> Util.dyn_of_sexp ast
+    | Error s -> raise_unexpected __LOC__ variable
 
   let _ = bind_core_forms_primitives ()
 
