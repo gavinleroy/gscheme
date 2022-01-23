@@ -8,11 +8,29 @@
 
 module T = Types
 
-let foldl1 f l  =
-  match l with
-  | (l :: ls) ->
-    List.fold_left f l ls
-  | _ -> raise (T.Unexpected "foldl1 received empty list")
+let fst : type a b. (a * b) -> a
+  = fun (x, _) -> x
+
+let snd : type a b. (a * b) -> b
+  = fun (_, y) -> y
+
+let ( <.> ) : type a b c. (b -> c) -> (a -> b) -> (a -> c)
+  = fun f g -> fun a -> f ( g a )
+
+module List = struct
+  include List
+
+  let foldl1 : type a. (a -> a -> a) -> a list -> a
+    = fun f l ->
+      match l with
+      | (l :: ls) ->
+        List.fold_left f l ls
+      | _ -> raise (T.Unexpected "foldl1 received empty list")
+
+  let last : type a. a t -> a
+    = fun ls -> List.rev ls |> List.hd
+
+end
 
 let rec unwrap_int : T.dyn -> int64 T.maybe_exn
   = fun s ->
@@ -33,14 +51,14 @@ and unwrap_id : T.dyn -> T.id T.maybe_exn
     let open T in
     match s with
     | Dyn (IdT, Id id) -> T.ok id
-    | s -> error (Type_mismatch ("string", s))
+    | s -> error (Type_mismatch ("identifier?", s))
 
 and unwrap_proc : T.dyn -> (T.dyn list -> T.dyn T.maybe_exn) T.maybe_exn
   = fun s ->
     let open T in
     match s with
     | Dyn (ProcT, Proc f) -> ok f
-    | _ -> error (Type_mismatch ("procedure", s))
+    | _ -> error (Type_mismatch ("procedure?", s))
 
 and dyn_of_sexp : T.sexp -> T.dyn
   = function
@@ -63,24 +81,22 @@ and fmt s =
   let open T in
   let b = ref 0 in
   let rec sd = function
+    | s when is_void s -> "#<void>"
+    | s when is_func s ->
+      "#<procedure>" (* TODO add name if named ... *)
+    | Dyn (BoolT, Bool true) -> "#t"
+    | Dyn (BoolT, Bool false) -> "#f"
     | Dyn (IdT, Id s) -> s
     | Dyn (IntT, Int i) ->
       Int64.to_string i
-    | Dyn (BoolT, Bool b) ->
-      if b then "#t" else "#f"
-    | s when is_func s ->
-      "#<procedure>" (* TODO add name if named ... *)
     | Dyn (StxT, Stx (e, scopes)) ->
       Printf.sprintf "#<syntax %s>" e
-
     | Dyn (ListT, List [Dyn (IdT, Id "quote"); rhs]) ->
       sd rhs |> Printf.sprintf "'%s"
-
     | Dyn (ListT, List ls) ->
       incr b;
       many ls |> Printf.sprintf "%s(%s)"
         (if !b <> 1 then "" else "'")
-
     | Dyn (DottedT, Dotted (ls, tl)) ->
       incr b;
       let fs = many ls
@@ -88,12 +104,15 @@ and fmt s =
       Printf.sprintf "%s(%s . %s)"
         (if !b <> 1 then "" else "'")
         fs l
-
     | _ -> raise (T.Unexpected "fmt_dyn unexpected object")
 
-  and many ls = List.map sd ls |> foldl1 (fun a s ->
+  and many ls = List.map sd ls |> List.foldl1 (fun a s ->
       a ^ " " ^ s)
   in sd s
+
+and is_void = function
+  | T.Dyn (VoidT, Void) -> true
+  | _ -> false
 
 and is_id = function
   | T.Dyn (IdT, Id _) -> true
@@ -125,6 +144,8 @@ and is_func f =
 and is_stx = function
   | T.Dyn (StxT, Stx _) -> true
   | _ -> false
+
+and make_void = T.Dyn (VoidT, Void)
 
 and make_bool b = T.Dyn (BoolT, Bool b)
 

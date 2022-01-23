@@ -63,6 +63,7 @@ type sexp =
   | SexpDotted of sexp list * sexp
 
 type _ typ =
+  | VoidT : unit data typ
   | BoolT : bool data typ
   | IntT : int64 data typ
   | IdT : id data typ
@@ -70,23 +71,32 @@ type _ typ =
   | ListT : dyn list data typ
   | DottedT : (dyn list * dyn) data typ
   (* lambdas are user defined functions *)
-  | LambT : (dyn list -> dyn) data typ
+  | LambT : lambda_rec data typ
   (* Procedures are primitive functions *)
   | ProcT : (dyn list -> dyn maybe_exn) data typ
 
 and _ data =
+  | Void : unit data
   | Bool : bool -> bool data
   | Int : int64 -> int64 data
   | Id : id -> id data
   | Stx : stx -> stx data
   | List : 'a list -> 'a list data
   | Dotted : (dyn list * dyn) -> (dyn list * dyn) data
-  | Lamb : (dyn list -> dyn) -> (dyn list -> dyn) data
+  | Lamb : lambda_rec -> lambda_rec data
   | Proc : (dyn list -> dyn maybe_exn) -> (dyn list -> dyn maybe_exn) data
 
 and (_, _) eq = Eq : ('a, 'a) eq
 
 and dyn = Dyn : 'a typ * 'a -> dyn
+
+and lambda_rec = { params : id list
+                 ; varargs : id option
+                 ; body : dyn list
+                 ; closure : dyn_ref_map
+                 }
+
+and dyn_ref_map = dyn ref Map.Make(String).t
 
 and runtime_exn =
   | Runtime_error of string
