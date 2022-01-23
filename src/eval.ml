@@ -1,6 +1,6 @@
 (*******************************************)
 (*                                         *)
-(* Gavin Gray 01.2021                      *)
+(* Gavin Gray 01.2022                      *)
 (*                                         *)
 (* GScheme                                 *)
 (*                                         *)
@@ -37,7 +37,6 @@ let rec eval ?env:(e = Env.base) s : (dyn ref * dyn ref Env.t) maybe_exn =
       ret U.make_void e
     end
 
-  (* TODO make a map form *)
   | Dyn(ListT, List [ Dyn (IdT, Id "map"); func; ls ]) ->
     eval ~env:e func >>= fun (f, _) ->
     eval ~env:e ls >>= fun (ls, _) ->
