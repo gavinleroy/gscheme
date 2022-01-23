@@ -13,3 +13,7 @@ build:
 .PHONY: test
 test:
 	@dune runtest
+
+.PHONY: clean
+clean:
+	@rm -rf _build
