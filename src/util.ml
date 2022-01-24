@@ -77,39 +77,6 @@ and dyn_of_sexp : T.sexp -> T.dyn
         | tl -> make_dotted (hd, tl)
       end
 
-and fmt s =
-  let open T in
-  let b = ref 0 in
-  let rec sd = function
-    | s when is_void s -> "#<void>"
-    | s when is_func s ->
-      "#<procedure>" (* TODO add name if named ... *)
-    | Dyn (BoolT, Bool true) -> "#t"
-    | Dyn (BoolT, Bool false) -> "#f"
-    | Dyn (IdT, Id s) -> s
-    | Dyn (IntT, Int i) ->
-      Int64.to_string i
-    | Dyn (StxT, Stx (e, scopes)) ->
-      Printf.sprintf "#<syntax %s>" e
-    | Dyn (ListT, List [Dyn (IdT, Id "quote"); rhs]) ->
-      sd rhs |> Printf.sprintf "'%s"
-    | Dyn (ListT, List ls) ->
-      incr b;
-      many ls |> Printf.sprintf "%s(%s)"
-        (if !b <> 1 then "" else "'")
-    | Dyn (DottedT, Dotted (ls, tl)) ->
-      incr b;
-      let fs = many ls
-      and l = sd tl in
-      Printf.sprintf "%s(%s . %s)"
-        (if !b <> 1 then "" else "'")
-        fs l
-    | _ -> raise (T.Unexpected "fmt_dyn unexpected object")
-
-  and many ls = List.map sd ls |> List.foldl1 (fun a s ->
-      a ^ " " ^ s)
-  in sd s
-
 and is_void = function
   | T.Dyn (VoidT, Void) -> true
   | _ -> false
@@ -163,18 +130,62 @@ and make_proc f = T.Dyn (ProcT, Proc f)
 
 and make_stx s = T.Dyn (StxT, Stx s)
 
-and datum_to_syntax : T.dyn -> T.dyn
-  = fun d -> match d with
-    | Dyn(IdT, Id i) ->
-      Dyn (StxT, Stx (i, T.Scopes.empty))
-    | Dyn(ListT, List ls) ->
-      Dyn (ListT, List (List.map datum_to_syntax ls))
-    | _ -> d
+and format_scheme_obj
+  = fun fmt s ->
+    let open Format in
+    let open Types in
+    let rec fso fmt s = match s with
+      | s when is_void s ->
+        fprintf fmt "#<void>"
+      | s when is_func s ->
+        fprintf fmt "#<procedure>" (* TODO add name if named ... *)
+      | Dyn (BoolT, Bool true) ->
+        fprintf fmt "#t"
+      | Dyn (BoolT, Bool false) ->
+        fprintf fmt "#f"
+      | Dyn (IdT, Id s) ->
+        fprintf fmt "%s" s
+      | Dyn (IntT, Int i) ->
+        fprintf fmt "%Li" i
+      | Dyn (StxT, Stx (e, scopes)) ->
+        fprintf fmt "#<syntax %s>" e
+      | Dyn (ListT, List [Dyn (IdT, Id "quote"); rhs]) ->
+        fprintf fmt "'%a" fso rhs
+      | Dyn (ListT, List ls) ->
+        fprintf fmt "(%a)"
+          (pp_print_list ~pp_sep:pp_print_space
+             fso) ls
+      | Dyn (DottedT, Dotted (ls, tl)) ->
+        fprintf fmt "(%a . %a)"
+          (pp_print_list ~pp_sep:pp_print_space
+             fso) ls
+          fso tl
+      | _ -> raise (T.Unexpected "fmt_dyn unexpected object")
+    in fprintf fmt "@[<1>%a@]" fso s
 
-and syntax_to_datum : T.dyn -> T.dyn
-  = fun stx -> match stx with
-    | Dyn(StxT, Stx (id, _)) ->
-      Dyn (IdT, Id id)
-    | Dyn(ListT, List ls) ->
-      Dyn (ListT, List (List.map syntax_to_datum ls))
-    | _ -> stx
+and format_runtime_exn
+  = fun fmt exc ->
+    let open Format in
+    let open Types in
+    let ind fmt s = match s with
+      | Runtime_error str ->
+        fprintf fmt "@[<v 2>%s:@ %s;@;@[<v 2>%s@]@]"
+          "XXX" "runtime error" str
+      | Arity_mismatch (expected, given, objs) ->
+        fprintf fmt "@[<v 2>%s:@ %s;@;@[expected: %d@;given: %d@;args: %a@]@]"
+          "XXX" "arity mismatch"
+          expected given
+          (pp_print_list ~pp_sep:pp_print_space format_scheme_obj) objs
+      | Type_mismatch (contract, obj) ->
+        fprintf fmt "@[<v 2>%s:@ %s;@;@[predicate: %s@;falsified by: %a@]@]"
+          "XXX" "contract violation"
+          contract
+          format_scheme_obj obj
+      | Free_var (s1, s2) ->
+        fprintf fmt "@[<v 2>%s:@ %s;@;@[%s@;%s@]@]"
+          "XXX" "free variable"
+          s1 s2
+      | Parser str ->
+        fprintf fmt "@[<v 2>%s:@ %s;@;@[%s@]@]"
+          "XXX" "syntax error" str
+    in fprintf fmt "@[<1>%a@]" ind exc

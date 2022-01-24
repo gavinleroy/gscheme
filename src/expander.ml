@@ -47,6 +47,22 @@ end
 
 (* XXX moved to types.ml *)
 
+let datum_to_syntax : dyn -> dyn
+  = fun d -> match d with
+    | Dyn(IdT, Id i) ->
+      Dyn (StxT, Stx (i, T.Scopes.empty))
+    | Dyn(ListT, List ls) ->
+      Dyn (ListT, List (List.map datum_to_syntax ls))
+    | _ -> d
+
+and syntax_to_datum : dyn -> dyn
+  = fun stx -> match stx with
+    | Dyn(StxT, Stx (id, _)) ->
+      Dyn (IdT, Id id)
+    | Dyn(ListT, List ls) ->
+      Dyn (ListT, List (List.map syntax_to_datum ls))
+    | _ -> stx
+
 (********************************************
  ** Pretty printing *)
 

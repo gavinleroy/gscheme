@@ -10,30 +10,25 @@ open Gscm
 
 let start () =
   let rec loop env =
+    Format.print_flush ();
+    print_newline ();
     print_string "> ";
     begin match read_line () |> Parser.sexpr_of_string with
       | Ok ast ->
-
         Util.dyn_of_sexp ast
         |> Eval.eval ~env:env
         |> begin function
           | Ok (ref_val, env') ->
-            print_endline (Util.fmt !ref_val);
+            Util.format_scheme_obj Format.std_formatter !ref_val;
             loop env'
-          | Error _ ->
-            print_endline "and error occurred todo :|"
+          | Error e ->
+            Util.format_runtime_exn Format.std_formatter e;
         end
-
-      | Error (Types.Parser s) ->
-        print_endline s
-
-      | Error _ -> print_endline "todo errors"
-    end;
-    loop env
-
+      | Error e ->
+        Util.format_runtime_exn Format.std_formatter e;
+    end; loop env
   in begin
-
-    Printf.printf "Welcome to GScheme v0.0.1\n";
+    Format.pp_set_geometry ~max_indent:4 ~margin:100 Format.std_formatter;
+    Printf.printf "Welcome to GScheme v0.0.1";
     loop Env.base
-
   end

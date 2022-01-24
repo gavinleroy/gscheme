@@ -112,8 +112,8 @@ let base =
   let open Hidden in
   let ext = fun id v e -> extend e id (ref v) in
   M.empty
-  |> ext "datum->syntax" (U.make_proc (fun [v] -> U.datum_to_syntax v |> ok))
-  |> ext "syntax->datum" (U.make_proc (fun [v] -> U.syntax_to_datum v |> ok))
+  (* |> ext "datum->syntax" (U.make_proc (fun [v] -> U.datum_to_syntax v |> ok))
+   * |> ext "syntax->datum" (U.make_proc (fun [v] -> U.syntax_to_datum v |> ok)) *)
 
   (* |> ext "syntax-e" (make_func (function
    *     | [ Dyn(StxT, Stx (e, _)) ] -> Dyn(IdT, Id e)
