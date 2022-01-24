@@ -115,6 +115,9 @@ and port =
   | WritePort of out_channel
   | ReadPort of in_channel
 
+(* use continuations and keep an explicit stack of them in the  evaluation *)
+(* and kontinuation = (dyn Box.t -> dyn Box.t) *)
+
 (* TODO all functions should be put in utils or a separate library *)
 
 let to_string = function

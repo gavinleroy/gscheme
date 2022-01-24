@@ -148,6 +148,14 @@ and apply : dyn ref -> dyn ref list -> dyn ref maybe_exn
         Env.extend_many closure params args
         |> bind_var_args varargs
         |> fun e ->
+
+        (* XXX FIXME using map_m like this does not
+         * update the environment between expressions
+         * like it should e.g.
+         *   ((lambda (x) (define y 3) (+ x y)) 2)
+         *    => 5
+         * NOTE this is used in several places not just here
+         **)
         map_m (eval ~env:e) body
         >>= (ok <.> fst <.> List.last)
       end

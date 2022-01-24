@@ -77,15 +77,49 @@ module Hidden = struct
 
   (* IO primitives (some of) *)
 
-  (* let open_input_file
-   *   = function
-   *     | [ Dyn (StringT, String fn) ] ->
-   *       open_in fn
-   *       |> U.makeport |> ok
-   *     | [ bad ] ->
-   *       error (Type_mismatch ("string?", bad))
-   *     | args ->
-   *       error (Arity_mismatch (1, List.length args, args)) *)
+  let open_input_file
+    = function
+      | [ Dyn (StringT, String fn) ] ->
+        ReadPort (open_in fn)
+        |> U.make_port |> ok
+      | [ bad ] ->
+        error (Type_mismatch ("string?", bad))
+      | args ->
+        error (Arity_mismatch (1, List.length args, args))
+
+  let open_output_file
+    = function
+      | [ Dyn (StringT, String fn) ] ->
+        WritePort (open_out fn)
+        |> U.make_port |> ok
+      | [ bad ] ->
+        error (Type_mismatch ("string?", bad))
+      | args ->
+        error (Arity_mismatch (1, List.length args, args))
+
+  let close_input_port
+    = function
+      | [ Dyn (PortT, Port (ReadPort p)) ] ->
+        begin
+          close_in p;
+          ok U.make_void
+        end
+      | [ bad ] ->
+        error (Type_mismatch ("input-port?", bad))
+      | args ->
+        error (Arity_mismatch (1, List.length args, args))
+
+  let close_output_port
+    = function
+      | [ Dyn (PortT, Port (WritePort p)) ] ->
+        begin
+          close_out p;
+          ok U.make_void
+        end
+      | [ bad ] ->
+        error (Type_mismatch ("output-port?", bad))
+      | args ->
+        error (Arity_mismatch (1, List.length args, args))
 
 end
 

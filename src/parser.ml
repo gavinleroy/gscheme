@@ -16,7 +16,7 @@ let is_whitespace = function
   | _ -> false
 
 let is_symbol c =
-  String.contains "!#$%&|*+-/:<=>?@^_~" c
+  String.contains "!$%&|*+-/:<=>?@^_~" c
 
 let is_digit = function
   | '0'..'9' -> true
@@ -46,6 +46,13 @@ let symbol =
 let letter =
   satisfy is_alpha
 
+let parse_bool =
+  let%bind s = char '#' *> take 1 in
+  match s with
+  | "t" -> T.SexpBool true |> return
+  | "f" -> T.SexpBool false |> return
+  | _ -> fail "boolean values must be #t/#f"
+
 let parse_ss_string =
   let%map str = char '"' *>
                 take_while (((<>)'"'))
@@ -59,10 +66,7 @@ let parse_atom =
              |> List.to_seq
              |> String.of_seq
   in
-  match full with
-  | "#t" -> T.SexpBool true
-  | "#f" -> T.SexpBool false
-  | _ -> T.SexpId full
+  T.SexpId full
 
 let parse_expr =
   fix (fun parse_expr ->
@@ -84,6 +88,7 @@ let parse_expr =
       choice [ lex parse_atom
              ; lex parse_ss_string
              ; lex parse_int
+             ; lex parse_bool
              ; lex parse_quoted
              ; lex parse_dotted
              ; lex parse_list
