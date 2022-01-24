@@ -62,9 +62,10 @@ and unwrap_proc : T.dyn -> (T.dyn list -> T.dyn T.maybe_exn) T.maybe_exn
 
 and dyn_of_sexp : T.sexp -> T.dyn
   = function
-    | SexpId i -> make_id i
-    | SexpInt i -> make_int i
     | SexpBool b -> make_bool b
+    | SexpInt i -> make_int i
+    | SexpId i -> make_id i
+    | SexpString s -> make_string s
     | SexpList l ->
       make_list (List.map dyn_of_sexp l)
     | SexpDotted (hd, tl) ->
@@ -83,6 +84,10 @@ and is_void = function
 
 and is_id = function
   | T.Dyn (IdT, Id _) -> true
+  | _ -> false
+
+and is_string = function
+  | T.Dyn (StringT, String _) -> true
   | _ -> false
 
 and is_bool = function
@@ -118,6 +123,8 @@ and make_bool b = T.Dyn (BoolT, Bool b)
 
 and make_id id = T.Dyn (IdT, Id id)
 
+and make_string s = T.Dyn (StringT, String s)
+
 and make_int i = T.Dyn (IntT, Int i)
 
 and make_list l = T.Dyn (ListT, List l)
@@ -129,6 +136,8 @@ and make_lambda f = T.Dyn (LambT, Lamb f)
 and make_proc f = T.Dyn (ProcT, Proc f)
 
 and make_stx s = T.Dyn (StxT, Stx s)
+
+and make_port p = T.Dyn (PortT, Port p)
 
 and format_scheme_obj
   = fun fmt s ->
@@ -143,6 +152,8 @@ and format_scheme_obj
         fprintf fmt "#t"
       | Dyn (BoolT, Bool false) ->
         fprintf fmt "#f"
+      | Dyn (StringT, String s) ->
+        fprintf fmt "\"%s\"" s
       | Dyn (IdT, Id s) ->
         fprintf fmt "%s" s
       | Dyn (IntT, Int i) ->
@@ -161,7 +172,7 @@ and format_scheme_obj
              fso) ls
           fso tl
       | _ -> raise (T.Unexpected "fmt_dyn unexpected object")
-    in fprintf fmt "@[<1>%a@]" fso s
+    in fprintf fmt "@[%a@]" fso s
 
 and format_runtime_exn
   = fun fmt exc ->
@@ -169,23 +180,23 @@ and format_runtime_exn
     let open Types in
     let ind fmt s = match s with
       | Runtime_error str ->
-        fprintf fmt "@[<v 2>%s:@ %s;@;@[<v 2>%s@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@ @[<2>%s@]@]"
           "XXX" "runtime error" str
       | Arity_mismatch (expected, given, objs) ->
-        fprintf fmt "@[<v 2>%s:@ %s;@;@[expected: %d@;given: %d@;args: %a@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@ @[<2>expected: %d@;given: %d@;args: %a@]@]"
           "XXX" "arity mismatch"
           expected given
           (pp_print_list ~pp_sep:pp_print_space format_scheme_obj) objs
       | Type_mismatch (contract, obj) ->
-        fprintf fmt "@[<v 2>%s:@ %s;@;@[predicate: %s@;falsified by: %a@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@ @[<2>predicate: %s@;falsified by: %a@]@]"
           "XXX" "contract violation"
           contract
           format_scheme_obj obj
       | Free_var (s1, s2) ->
-        fprintf fmt "@[<v 2>%s:@ %s;@;@[%s@;%s@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@;@[%s@;%s@]@]"
           "XXX" "free variable"
           s1 s2
       | Parser str ->
-        fprintf fmt "@[<v 2>%s:@ %s;@;@[%s@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@ @[<2>%s@]@]"
           "XXX" "syntax error" str
     in fprintf fmt "@[<1>%a@]" ind exc

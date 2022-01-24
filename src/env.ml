@@ -75,6 +75,18 @@ module Hidden = struct
         U.make_dotted ([x], y) |> ok
       | args -> error (Arity_mismatch (2, List.length args, args))
 
+  (* IO primitives (some of) *)
+
+  (* let open_input_file
+   *   = function
+   *     | [ Dyn (StringT, String fn) ] ->
+   *       open_in fn
+   *       |> U.makeport |> ok
+   *     | [ bad ] ->
+   *       error (Type_mismatch ("string?", bad))
+   *     | args ->
+   *       error (Arity_mismatch (1, List.length args, args)) *)
+
 end
 
 module M = Map.Make(String)

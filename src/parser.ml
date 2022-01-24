@@ -46,6 +46,12 @@ let symbol =
 let letter =
   satisfy is_alpha
 
+let parse_ss_string =
+  let%map str = char '"' *>
+                take_while (((<>)'"'))
+                <* char '"' in
+  T.SexpString str
+
 let parse_atom =
   let%bind stem = (letter <|> symbol) in
   let%map rest = many (letter <|> digit <|> symbol) in
@@ -76,6 +82,7 @@ let parse_expr =
             SexpId "quote"; e])
       in
       choice [ lex parse_atom
+             ; lex parse_ss_string
              ; lex parse_int
              ; lex parse_quoted
              ; lex parse_dotted

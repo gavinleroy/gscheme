@@ -58,43 +58,46 @@ let core_primitives = [ "datum->syntax"
 type sexp =
   | SexpBool of bool
   | SexpInt of int64
+  | SexpString of String.t
   | SexpId of id
   | SexpList of sexp list
   | SexpDotted of sexp list * sexp
 
-type _ typ =
-  | VoidT : unit data typ
-  | BoolT : bool data typ
-  | IntT : int64 data typ
-  | IdT : id data typ
-  | StxT : stx data typ
-  | ListT : dyn list data typ
-  | DottedT : (dyn list * dyn) data typ
-  (* lambdas are user defined functions *)
-  | LambT : lambda_rec data typ
-  (* Procedures are primitive functions *)
-  | ProcT : (dyn list -> dyn maybe_exn) data typ
+type _ scheme_type =
+  | VoidT : unit scheme_type
+  | BoolT : bool scheme_type
+  | IntT : int64 scheme_type
+  | StringT : String.t scheme_type
+  | IdT : id scheme_type
+  | StxT : stx scheme_type
+  | ListT : dyn list scheme_type
+  | DottedT : (dyn list * dyn) scheme_type
+  | LambT : lambda_record scheme_type
+  | ProcT : (dyn list -> dyn maybe_exn) scheme_type
+  | PortT : port scheme_type
 
 and _ data =
   | Void : unit data
   | Bool : bool -> bool data
   | Int : int64 -> int64 data
+  | String : String.t -> String.t data
   | Id : id -> id data
   | Stx : stx -> stx data
   | List : 'a list -> 'a list data
   | Dotted : (dyn list * dyn) -> (dyn list * dyn) data
-  | Lamb : lambda_rec -> lambda_rec data
+  | Lamb : lambda_record -> lambda_record data
   | Proc : (dyn list -> dyn maybe_exn) -> (dyn list -> dyn maybe_exn) data
+  | Port : port -> port data
 
 and (_, _) eq = Eq : ('a, 'a) eq
 
-and dyn = Dyn : 'a typ * 'a -> dyn
+and dyn = Dyn : 'a scheme_type * 'a data -> dyn
 
-and lambda_rec = { params : id list
-                 ; varargs : id option
-                 ; body : dyn list
-                 ; closure : dyn_ref_map
-                 }
+and lambda_record = { params : id list
+                    ; varargs : id option
+                    ; body : dyn list
+                    ; closure : dyn_ref_map
+                    }
 
 and dyn_ref_map = dyn ref Map.Make(String).t
 
@@ -107,6 +110,10 @@ and runtime_exn =
   (* | Bad_form (string * dyn) *)
 
 and 'a maybe_exn = ('a, runtime_exn) Result.t
+
+and port =
+  | WritePort of out_channel
+  | ReadPort of in_channel
 
 (* TODO all functions should be put in utils or a separate library *)
 

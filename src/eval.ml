@@ -14,6 +14,7 @@ let rec eval ?env:(e = Env.base) s : (dyn ref * dyn ref Env.t) maybe_exn =
   | s when U.is_bool s -> ret s e
   | s when U.is_int s -> ret s e
   | s when U.is_func s -> ret s e
+  | s when U.is_string s -> ret s e
 
   | Dyn(IdT, Id id) ->
     Env.lookup e id >>= fun v ->
