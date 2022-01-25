@@ -9,9 +9,7 @@
 open Types
 module U = Util
 
-(* TODO hidden will become its own module
- *      called Primitves -- or something similar
- **)
+(* TODO put somewhere else *)
 module Hidden = struct
 
   let bool_binop : type a. (scheme_object -> a maybe_exn) -> (a -> a -> bool) -> scheme_object list -> scheme_object maybe_exn
@@ -138,40 +136,60 @@ let extend env id v =
 
 (* NOTE this function is unsafe as it doesn't report errors on
  *      unbound variables. This should only be called when a function
- *      is bound with variable arguments, but the signature doeosn't
+ *      is bound with variable arguments, but the signature doesn't
  *      enforce security.
  **)
-let extend_many env ids vs =
-  let rec loop acc is vs = match is,vs with
-    | (i :: is), (v :: vs) ->
-      loop (extend acc i v) is vs
-    | (_ :: _), []
-    | [], []
-    | [], (_ :: _) -> acc
-  in loop env ids vs
+let extend_many : type a. a t -> id list -> a list -> a t
+  = fun env ids vs ->
+    let rec loop acc is vs = match is,vs with
+      | (i :: is), (v :: vs) ->
+        loop (extend acc i v) is vs
+      | (_ :: _), []
+      | [], []
+      | [], (_ :: _) -> acc
+    in loop env ids vs
 
-let empty = M.empty
+let empty : type a. a t
+  = M.empty
 
-(* base environment with core primitives *)
+(* base environment with /eventually/ all the core primitives *)
 
-let base =
-  let open Hidden in
+let base : scheme_object Box.t t
+  = let open Hidden in
   let ext = fun id v e -> extend e id (Box.make v) in
   M.empty
-  (* |> ext "datum->syntax" (U.make_proc (fun [v] -> U.datum_to_syntax v |> ok))
-   * |> ext "syntax->datum" (U.make_proc (fun [v] -> U.syntax_to_datum v |> ok)) *)
-
-  (* |> ext "syntax-e" (make_func (function
-   *     | [ S_obj (StxT, Stx (e, _)) ] -> S_obj (IdT, Id e)
-   *     | s -> error (Runtime_error "expected syntax object but received todo "))) *)
 
   |> ext "cons" (U.make_proc cons)
   |> ext "car" (U.make_proc car)
   |> ext "cdr" (U.make_proc cdr)
 
-  |> ext "+" (U.make_proc (num_binop (Int64.add)))
-  |> ext "-" (U.make_proc (num_binop (Int64.sub)))
-  |> ext "*" (U.make_proc (num_binop (Int64.mul)))
-  |> ext "/" (U.make_proc (num_binop (Int64.div)))
-  |> ext "remainder" (U.make_proc (num_binop (Int64.rem)))
-  |> ext "=" (U.make_proc (num_bool_binop (Int64.equal)))
+  |> ext "+" (U.make_proc (num_binop Int64.add))
+  |> ext "-" (U.make_proc (num_binop Int64.sub))
+  |> ext "*" (U.make_proc (num_binop Int64.mul))
+  |> ext "/" (U.make_proc (num_binop Int64.div))
+  |> ext "remainder" (U.make_proc (num_binop Int64.rem))
+  |> ext "=" (U.make_proc (num_bool_binop Int64.equal))
+
+let%test_module _ = (module struct
+
+  open Util.Test
+
+  let%test _ = (
+    extend empty "x" 10
+    |> (fun env ->
+        lookup env "x")
+       = Ok 10)
+
+  let%test _ = (extend empty "y" 10
+                |> (fun env -> extend env "x" 0)
+                |> (fun env -> lookup env "y")
+                   = Ok 10)
+
+  let%test _ = (extend empty "x" 10
+                |> (fun env -> extend env "x" 0)
+                |> (fun env -> lookup env "x")
+                   = Ok 0)
+
+  let%test _ = (expect_exn (Free_var ("", ""))
+                  (lookup empty "y"))
+end)

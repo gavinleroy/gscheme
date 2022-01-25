@@ -175,3 +175,26 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
 
 and ret : scheme_object -> scheme_object Box.t Env.t -> (scheme_object Box.t * scheme_object Box.t Env.t) maybe_exn
   = fun v e -> ok ((Box.make v), e)
+
+
+let%test_module _ = (module struct
+
+  open Types
+  open Util.Test
+
+  let%test _ = (
+    let obj = (S_obj (IntT, Int 1L)) in
+    eval_to_value Env.empty obj
+    = Ok obj)
+
+  let%test _ = (
+    let obj = (S_obj (StringT, String "hello world")) in
+    eval_to_value Env.empty obj
+    = Ok obj)
+
+  let%test _ = (
+    expect_exn (Free_var ("", ""))
+      (let obj = (S_obj (IdT, Id "atom")) in
+       eval_to_value Env.empty obj))
+
+end)

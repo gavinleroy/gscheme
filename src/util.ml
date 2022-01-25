@@ -200,3 +200,21 @@ and format_runtime_exn
         fprintf fmt "@[<2>%s:@ %s;@ @[<hov 2>%s@]@]"
           "XXX" "syntax error" str
     in fprintf fmt "@[%a@]" ind exc
+
+module Test = struct
+
+  let expect_exn : type a. Types.runtime_exn -> a Types.maybe_exn -> bool
+  (** Check that the expected type of runtime exception was returned.
+      NOTE does not check equality of exception arguments. *)
+    = fun exp act -> match act with
+      | Error act -> begin match exp, act with
+          | Types.Runtime_error _, Types.Runtime_error _ -> true
+          | Types.Arity_mismatch _, Types.Arity_mismatch _ -> true
+          | Types.Type_mismatch _, Types.Type_mismatch _ -> true
+          | Types.Free_var _, Types.Free_var _ -> true
+          | Types.Parser _, Types.Parser _ -> true
+          | _ -> false
+        end
+      | _ -> false
+
+end
