@@ -9,28 +9,28 @@
 module U = Util
 open Types
 
-let rec eval ?env:(e = Env.base) s : (dyn Box.t * dyn Box.t Env.t) maybe_exn =
+let rec eval ?env:(e = Env.base) s =
   match s with
   | s when U.is_bool s -> ret s e
   | s when U.is_int s -> ret s e
   | s when U.is_func s -> ret s e
   | s when U.is_string s -> ret s e
 
-  | Dyn(IdT, Id id) ->
+  | S_obj (IdT, Id id) ->
     Env.lookup e id >>= fun v ->
     ok (v, e)
 
-  | Dyn(ListT, List [ Dyn (IdT, Id "quote"); v]) ->
+  | S_obj (ListT, List [ S_obj (IdT, Id "quote"); v]) ->
     ret v e
 
-  | Dyn(ListT, List [ Dyn(IdT, Id "if"); cond; te; fe ]) ->
+  | S_obj (ListT, List [ S_obj (IdT, Id "if"); cond; te; fe ]) ->
     eval ~env:e cond >>= fun (box_v, _) ->
     begin match Box.get box_v with
-      | Dyn(BoolT, Bool true) -> eval ~env:e te
+      | S_obj (BoolT, Bool true) -> eval ~env:e te
       | _ -> eval ~env:e fe
     end
 
-  | Dyn(ListT, List [ Dyn (IdT, Id "set!"); Dyn (IdT, Id sym); rhs ]) ->
+  | S_obj (ListT, List [ S_obj (IdT, Id "set!"); S_obj (IdT, Id sym); rhs ]) ->
     eval ~env:e rhs >>= fun (ref_rhs, _) ->
     Env.lookup e sym >>= fun ref_v ->
     begin
@@ -38,11 +38,11 @@ let rec eval ?env:(e = Env.base) s : (dyn Box.t * dyn Box.t Env.t) maybe_exn =
       ret U.make_void e
     end
 
-  | Dyn(ListT, List [ Dyn (IdT, Id "map"); func; ls ]) ->
+  | S_obj (ListT, List [ S_obj (IdT, Id "map"); func; ls ]) ->
     eval ~env:e func >>= fun (f, _) ->
     eval ~env:e ls >>= fun (ls, _) ->
     begin match Box.get ls with
-      | Dyn (ListT, List ls) ->
+      | S_obj (ListT, List ls) ->
         map_m (fun l ->
             eval ~env:e l >>= fun (l, _) ->
             apply f [l])
@@ -54,44 +54,44 @@ let rec eval ?env:(e = Env.base) s : (dyn Box.t * dyn Box.t Env.t) maybe_exn =
     end
 
   (* define / lambda forms *)
-  | Dyn(ListT, List [ Dyn (IdT, Id "define"); Dyn (IdT, Id sym); rhs]) ->
+  | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym); rhs]) ->
     eval ~env:e rhs >>= fun (v, _) ->
     Env.extend e sym v |> fun e ->
     ret U.make_void e
 
-  | Dyn(ListT, List (Dyn (IdT, Id "define")
-                     :: Dyn(ListT, List (Dyn(IdT, Id fname) :: params))
-                     :: body)) ->
+  | S_obj (ListT, List (S_obj (IdT, Id "define")
+                        :: S_obj (ListT, List (S_obj (IdT, Id fname) :: params))
+                        :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
     define_func e fname (make_fix () e params body)
 
-  | Dyn(ListT, List (Dyn (IdT, Id "define")
-                     :: Dyn (DottedT, Dotted
-                               (Dyn (IdT, Id fname) :: params, varargs))
-                     :: body)) ->
+  | S_obj (ListT, List (S_obj (IdT, Id "define")
+                        :: S_obj (DottedT, Dotted
+                                    (S_obj (IdT, Id fname) :: params, varargs))
+                        :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
     U.unwrap_id varargs >>= fun va_id ->
     define_func e fname (make_va va_id e params body)
 
-  | Dyn(ListT, List (Dyn(IdT, Id "lambda")
-                     :: Dyn(ListT, List params)
-                     :: body)) ->
+  | S_obj (ListT, List (S_obj (IdT, Id "lambda")
+                        :: S_obj (ListT, List params)
+                        :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
     ok (make_fix () e params body, e)
 
-  | Dyn(ListT, List (Dyn (IdT, Id "lambda")
-                     :: Dyn (DottedT, Dotted
-                               (Dyn (IdT, Id fname) :: params, varargs))
-                     :: body)) ->
+  | S_obj (ListT, List (S_obj (IdT, Id "lambda")
+                        :: S_obj (DottedT, Dotted
+                                    (S_obj (IdT, Id fname) :: params, varargs))
+                        :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
     U.unwrap_id varargs >>= fun vararg ->
     ok (make_va vararg e params body, e)
 
-  | Dyn(ListT, List (Dyn(IdT, Id "lambda") :: Dyn(IdT, Id vararg) :: body)) ->
+  | S_obj (ListT, List (S_obj (IdT, Id "lambda") :: S_obj (IdT, Id vararg) :: body)) ->
     ok (make_va vararg e [] body, e)
 
   (* function application *)
-  | Dyn(ListT, List (func :: args)) ->
+  | S_obj (ListT, List (func :: args)) ->
     let open U in
     eval ~env:e func >>= fun (f, _) ->
     map_m (fun arg ->
@@ -113,13 +113,13 @@ and eval_to_value
     ok (Box.get box)
 
 and define_func
-  : dyn Box.t Env.t -> id -> dyn Box.t -> (dyn Box.t * dyn Box.t Env.t) maybe_exn
+  : scheme_object Box.t Env.t -> id -> scheme_object Box.t -> (scheme_object Box.t * scheme_object Box.t Env.t) maybe_exn
   = fun e name obj ->
     Env.extend e name obj
     |> ret U.make_void
 
 and make_func
-  : string option -> dyn Box.t Env.t -> id list -> dyn list -> dyn Box.t
+  : string option -> scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t
   = fun va e ps bdy ->
     U.make_lambda { params = ps
                   ; varargs = va
@@ -128,12 +128,12 @@ and make_func
                   } |> Box.make
 
 and make_va
-  : string -> (dyn Box.t Env.t -> id list -> dyn list -> dyn Box.t)
+  : string -> (scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t)
   = fun va -> make_func (Some va)
 
 and make_fix () = make_func None
 
-and apply : dyn Box.t -> dyn Box.t list -> dyn Box.t maybe_exn
+and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box.t maybe_exn
   = fun f args ->
     let open U in
     let unboxed_args = List.map Box.get args in
@@ -142,7 +142,7 @@ and apply : dyn Box.t -> dyn Box.t list -> dyn Box.t maybe_exn
       (f |> unwrap_proc |> get_ok) unboxed_args
       >>= fun v -> ok (Box.make v)
 
-    | Dyn (LambT, Lamb { params; varargs; body; closure }) ->
+    | S_obj (LambT, Lamb { params; varargs; body; closure }) ->
 
       let len = List.length in
       let remaining = List.filteri (fun i _ ->
@@ -173,5 +173,5 @@ and apply : dyn Box.t -> dyn Box.t list -> dyn Box.t maybe_exn
 
     | s -> error (Type_mismatch ("procedure?", s))
 
-and ret : dyn -> dyn Box.t Env.t -> (dyn Box.t * dyn Box.t Env.t) maybe_exn
+and ret : scheme_object -> scheme_object Box.t Env.t -> (scheme_object Box.t * scheme_object Box.t Env.t) maybe_exn
   = fun v e -> ok ((Box.make v), e)

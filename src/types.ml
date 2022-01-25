@@ -6,6 +6,8 @@
 (*                                         *)
 (*******************************************)
 
+(* FIXME restrict module interface *)
+
 include Result
 
 (* signals an internal error FIXME remove *)
@@ -70,10 +72,10 @@ type _ scheme_type =
   | StringT : String.t scheme_type
   | IdT : id scheme_type
   | StxT : stx scheme_type
-  | ListT : dyn list scheme_type
-  | DottedT : (dyn list * dyn) scheme_type
+  | ListT : scheme_object list scheme_type
+  | DottedT : (scheme_object list * scheme_object) scheme_type
   | LambT : lambda_record scheme_type
-  | ProcT : (dyn list -> dyn maybe_exn) scheme_type
+  | ProcT : proc_sig scheme_type
   | PortT : port scheme_type
 
 and _ data =
@@ -84,39 +86,38 @@ and _ data =
   | Id : id -> id data
   | Stx : stx -> stx data
   | List : 'a list -> 'a list data
-  | Dotted : (dyn list * dyn) -> (dyn list * dyn) data
+  | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) data
   | Lamb : lambda_record -> lambda_record data
-  | Proc : (dyn list -> dyn maybe_exn) -> (dyn list -> dyn maybe_exn) data
+  | Proc : proc_sig -> proc_sig data
   | Port : port -> port data
+
+and proc_sig = (scheme_object list -> scheme_object maybe_exn)
 
 and (_, _) eq = Eq : ('a, 'a) eq
 
-and dyn = Dyn : 'a scheme_type * 'a data -> dyn
+and scheme_object = S_obj : 'a scheme_type * 'a data -> scheme_object
 
 and lambda_record = { params : id list
                     ; varargs : id option
-                    ; body : dyn list
+                    ; body : scheme_object list
                     ; closure : dyn_ref_map
                     }
 
-and dyn_ref_map = dyn Box.t Map.Make(String).t
+and dyn_ref_map = scheme_object Box.t Map.Make(String).t
 
 and runtime_exn =
   | Runtime_error of string
-  | Arity_mismatch of (int * int * dyn list)
-  | Type_mismatch of (string * dyn)
+  | Arity_mismatch of (int * int * scheme_object list)
+  | Type_mismatch of (string * scheme_object)
   | Free_var of (string * string)
   | Parser of string
-  (* | Bad_form (string * dyn) *)
+  (* | Bad_form (string * scheme_object) *)
 
 and 'a maybe_exn = ('a, runtime_exn) Result.t
 
 and port =
   | WritePort of out_channel
   | ReadPort of in_channel
-
-(* use continuations and keep an explicit stack of them in the  evaluation *)
-(* and kontinuation = (dyn Box.t -> dyn Box.t) *)
 
 (* TODO all functions should be put in utils or a separate library *)
 

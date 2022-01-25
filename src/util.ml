@@ -32,35 +32,35 @@ module List = struct
 
 end
 
-let rec unwrap_int : T.dyn -> int64 T.maybe_exn
+let rec unwrap_int : T.scheme_object -> int64 T.maybe_exn
   = fun s ->
     let open T in
     match s with
-    | Dyn (IntT, Int i) -> T.ok i
+    | S_obj (IntT, Int i) -> T.ok i
     | s -> T.error (T.Type_mismatch ("int?", s))
 
-and unwrap_bool : T.dyn -> bool T.maybe_exn
+and unwrap_bool : T.scheme_object -> bool T.maybe_exn
   = fun s ->
     let open T in
     match s with
-    | Dyn (BoolT, Bool b) -> T.ok b
+    | S_obj (BoolT, Bool b) -> T.ok b
     | s -> T.error (T.Type_mismatch ("bool?", s))
 
-and unwrap_id : T.dyn -> T.id T.maybe_exn
+and unwrap_id : T.scheme_object -> T.id T.maybe_exn
   = fun s ->
     let open T in
     match s with
-    | Dyn (IdT, Id id) -> T.ok id
+    | S_obj (IdT, Id id) -> T.ok id
     | s -> error (Type_mismatch ("identifier?", s))
 
-and unwrap_proc : T.dyn -> (T.dyn list -> T.dyn T.maybe_exn) T.maybe_exn
+and unwrap_proc : T.scheme_object -> (T.scheme_object list -> T.scheme_object T.maybe_exn) T.maybe_exn
   = fun s ->
     let open T in
     match s with
-    | Dyn (ProcT, Proc f) -> ok f
+    | S_obj (ProcT, Proc f) -> ok f
     | _ -> error (Type_mismatch ("procedure?", s))
 
-and dyn_of_sexp : T.sexp -> T.dyn
+and dyn_of_sexp : T.sexp -> T.scheme_object
   = function
     | SexpBool b -> make_bool b
     | SexpInt i -> make_int i
@@ -71,73 +71,73 @@ and dyn_of_sexp : T.sexp -> T.dyn
     | SexpDotted (hd, tl) ->
       let hd = List.map dyn_of_sexp hd in
       begin match dyn_of_sexp tl with
-        | Dyn (DottedT, Dotted (hd', tl)) ->
+        | S_obj (DottedT, Dotted (hd', tl)) ->
           make_dotted (hd @ hd', tl)
-        | Dyn (ListT, List ls) ->
+        | S_obj (ListT, List ls) ->
           make_list (hd @ ls)
         | tl -> make_dotted (hd, tl)
       end
 
 and is_void = function
-  | T.Dyn (VoidT, Void) -> true
+  | T.S_obj (VoidT, Void) -> true
   | _ -> false
 
 and is_id = function
-  | T.Dyn (IdT, Id _) -> true
+  | T.S_obj (IdT, Id _) -> true
   | _ -> false
 
 and is_string = function
-  | T.Dyn (StringT, String _) -> true
+  | T.S_obj (StringT, String _) -> true
   | _ -> false
 
 and is_bool = function
-  | T.Dyn (BoolT, Bool _) -> true
+  | T.S_obj (BoolT, Bool _) -> true
   | _ -> false
 
 and is_int = function
-  | T.Dyn (IntT, Int _) -> true
+  | T.S_obj (IntT, Int _) -> true
   | _ -> false
 
 and is_list = function
-  | T.Dyn (ListT, List _) -> true
+  | T.S_obj (ListT, List _) -> true
   | _ -> false
 
 and is_proc = function
-  | T.Dyn (ProcT, Proc _) -> true
+  | T.S_obj (ProcT, Proc _) -> true
   | _ -> false
 
 and is_lambda = function
-  | T.Dyn (LambT, Lamb _) -> true
+  | T.S_obj (LambT, Lamb _) -> true
   | _ -> false
 
 and is_func f =
   is_proc f || is_lambda f
 
 and is_stx = function
-  | T.Dyn (StxT, Stx _) -> true
+  | T.S_obj (StxT, Stx _) -> true
   | _ -> false
 
-and make_void = T.Dyn (VoidT, Void)
+and make_void = T.S_obj (VoidT, Void)
 
-and make_bool b = T.Dyn (BoolT, Bool b)
+and make_bool b = T.S_obj (BoolT, Bool b)
 
-and make_id id = T.Dyn (IdT, Id id)
+and make_id id = T.S_obj (IdT, Id id)
 
-and make_string s = T.Dyn (StringT, String s)
+and make_string s = T.S_obj (StringT, String s)
 
-and make_int i = T.Dyn (IntT, Int i)
+and make_int i = T.S_obj (IntT, Int i)
 
-and make_list l = T.Dyn (ListT, List l)
+and make_list l = T.S_obj (ListT, List l)
 
-and make_dotted p = T.Dyn (DottedT, Dotted p)
+and make_dotted p = T.S_obj (DottedT, Dotted p)
 
-and make_lambda f = T.Dyn (LambT, Lamb f)
+and make_lambda f = T.S_obj (LambT, Lamb f)
 
-and make_proc f = T.Dyn (ProcT, Proc f)
+and make_proc f = T.S_obj (ProcT, Proc f)
 
-and make_stx s = T.Dyn (StxT, Stx s)
+and make_stx s = T.S_obj (StxT, Stx s)
 
-and make_port p = T.Dyn (PortT, Port p)
+and make_port p = T.S_obj (PortT, Port p)
 
 and format_scheme_obj
   = fun fmt s ->
@@ -148,30 +148,30 @@ and format_scheme_obj
         fprintf fmt "#<void>"
       | s when is_func s ->
         fprintf fmt "#<procedure>" (* TODO add name if named ... *)
-      | Dyn (BoolT, Bool true) ->
+      | S_obj (BoolT, Bool true) ->
         fprintf fmt "#t"
-      | Dyn (BoolT, Bool false) ->
+      | S_obj (BoolT, Bool false) ->
         fprintf fmt "#f"
-      | Dyn (StringT, String s) ->
+      | S_obj (StringT, String s) ->
         fprintf fmt "\"%s\"" s
-      | Dyn (IdT, Id s) ->
+      | S_obj (IdT, Id s) ->
         fprintf fmt "%s" s
-      | Dyn (IntT, Int i) ->
+      | S_obj (IntT, Int i) ->
         fprintf fmt "%Li" i
-      | Dyn (StxT, Stx (e, scopes)) ->
+      | S_obj (StxT, Stx (e, scopes)) ->
         fprintf fmt "#<syntax %s>" e
-      | Dyn (ListT, List [Dyn (IdT, Id "quote"); rhs]) ->
+      | S_obj (ListT, List [S_obj (IdT, Id "quote"); rhs]) ->
         fprintf fmt "'%a" fso rhs
-      | Dyn (ListT, List ls) ->
+      | S_obj (ListT, List ls) ->
         fprintf fmt "(%a)"
           (pp_print_list ~pp_sep:pp_print_space
              fso) ls
-      | Dyn (DottedT, Dotted (ls, tl)) ->
+      | S_obj (DottedT, Dotted (ls, tl)) ->
         fprintf fmt "(%a . %a)"
           (pp_print_list ~pp_sep:pp_print_space
              fso) ls
           fso tl
-      | _ -> raise (T.Unexpected "fmt_dyn unexpected object")
+      | _ -> raise (T.Unexpected "fmt_scheme_object unexpected object")
     in fprintf fmt "@[%a@]" fso s
 
 and format_runtime_exn
@@ -197,6 +197,6 @@ and format_runtime_exn
           "XXX" "free variable"
           s1 s2
       | Parser str ->
-        fprintf fmt "@[<2>%s:@ %s;@ @[<2>%s@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@ @[<hov 2>%s@]@]"
           "XXX" "syntax error" str
     in fprintf fmt "@[%a@]" ind exc

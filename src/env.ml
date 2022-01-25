@@ -14,7 +14,7 @@ module U = Util
  **)
 module Hidden = struct
 
-  let bool_binop : type a. (dyn -> a maybe_exn) -> (a -> a -> bool) -> dyn list -> dyn maybe_exn
+  let bool_binop : type a. (scheme_object -> a maybe_exn) -> (a -> a -> bool) -> scheme_object list -> scheme_object maybe_exn
     = fun cnv op args ->
       match args with
       | [ lhs; rhs ] ->
@@ -23,7 +23,7 @@ module Hidden = struct
         op l r |> U.make_bool |> ok
       | _ -> error (Arity_mismatch (2, List.length args, args))
 
-  let num_binop : (int64 -> int64 -> int64) -> dyn list -> dyn maybe_exn
+  let num_binop : (int64 -> int64 -> int64) -> scheme_object list -> scheme_object maybe_exn
     = fun op ls ->
       match ls with
       (* TODO require at least two arguments for numeric operations, however,
@@ -40,36 +40,36 @@ module Hidden = struct
   let bool_bool_binop = bool_binop U.unwrap_bool
   (* let string_bool_binop = bool_binop U.unwrap_string *)
 
-  let car : dyn list -> dyn maybe_exn
+  let car : scheme_object list -> scheme_object maybe_exn
     = function
-      | [ Dyn (ListT, List (v :: _)) ]
-      | [ Dyn (DottedT, Dotted ((v :: _), _)) ] ->
+      | [ S_obj (ListT, List (v :: _)) ]
+      | [ S_obj (DottedT, Dotted ((v :: _), _)) ] ->
         ok v
       | [ arg ] ->
         error (Type_mismatch ("pair?", arg))
       | args ->
         error (Arity_mismatch (1, List.length args, args))
 
-  let cdr : dyn list -> dyn maybe_exn
+  let cdr : scheme_object list -> scheme_object maybe_exn
     = function
-      | [ Dyn (ListT, List (_ :: ls)) ] ->
+      | [ S_obj (ListT, List (_ :: ls)) ] ->
         U.make_list ls |> ok
-      | [ Dyn (DottedT, Dotted ([_], tl)) ] ->
+      | [ S_obj (DottedT, Dotted ([_], tl)) ] ->
         ok tl
-      | [ Dyn (DottedT, Dotted ((_ :: ls), tl)) ] ->
+      | [ S_obj (DottedT, Dotted ((_ :: ls), tl)) ] ->
         U.make_dotted (ls, tl) |> ok
       | [ arg ] ->
         error (Type_mismatch ("pair?", arg))
       | args ->
         error (Arity_mismatch (1, List.length args, args))
 
-  let cons : dyn list -> dyn maybe_exn
+  let cons : scheme_object list -> scheme_object maybe_exn
     = function
-      | [ x; Dyn (ListT, List []) ] ->
+      | [ x; S_obj (ListT, List []) ] ->
         U.make_list [x] |> ok
-      | [ x; Dyn (ListT, List ls) ] ->
+      | [ x; S_obj (ListT, List ls) ] ->
         U.make_list (x :: ls) |> ok
-      | [ x; Dyn (DottedT, Dotted (ls, tl)) ] ->
+      | [ x; S_obj (DottedT, Dotted (ls, tl)) ] ->
         U.make_dotted (x :: ls, tl) |> ok
       | [ x; y ] ->
         U.make_dotted ([x], y) |> ok
@@ -79,7 +79,7 @@ module Hidden = struct
 
   let open_input_file
     = function
-      | [ Dyn (StringT, String fn) ] ->
+      | [ S_obj (StringT, String fn) ] ->
         ReadPort (open_in fn)
         |> U.make_port |> ok
       | [ bad ] ->
@@ -89,7 +89,7 @@ module Hidden = struct
 
   let open_output_file
     = function
-      | [ Dyn (StringT, String fn) ] ->
+      | [ S_obj (StringT, String fn) ] ->
         WritePort (open_out fn)
         |> U.make_port |> ok
       | [ bad ] ->
@@ -99,7 +99,7 @@ module Hidden = struct
 
   let close_input_port
     = function
-      | [ Dyn (PortT, Port (ReadPort p)) ] ->
+      | [ S_obj (PortT, Port (ReadPort p)) ] ->
         begin
           close_in p;
           ok U.make_void
@@ -111,7 +111,7 @@ module Hidden = struct
 
   let close_output_port
     = function
-      | [ Dyn (PortT, Port (WritePort p)) ] ->
+      | [ S_obj (PortT, Port (WritePort p)) ] ->
         begin
           close_out p;
           ok U.make_void
@@ -162,7 +162,7 @@ let base =
    * |> ext "syntax->datum" (U.make_proc (fun [v] -> U.syntax_to_datum v |> ok)) *)
 
   (* |> ext "syntax-e" (make_func (function
-   *     | [ Dyn(StxT, Stx (e, _)) ] -> Dyn(IdT, Id e)
+   *     | [ S_obj (StxT, Stx (e, _)) ] -> S_obj (IdT, Id e)
    *     | s -> error (Runtime_error "expected syntax object but received todo "))) *)
 
   |> ext "cons" (U.make_proc cons)
