@@ -37,14 +37,14 @@ let rec unwrap_int : T.dyn -> int64 T.maybe_exn
     let open T in
     match s with
     | Dyn (IntT, Int i) -> T.ok i
-    | s -> T.error (T.Type_mismatch ("int", s))
+    | s -> T.error (T.Type_mismatch ("int?", s))
 
 and unwrap_bool : T.dyn -> bool T.maybe_exn
   = fun s ->
     let open T in
     match s with
     | Dyn (BoolT, Bool b) -> T.ok b
-    | s -> T.error (T.Type_mismatch ("bool", s))
+    | s -> T.error (T.Type_mismatch ("bool?", s))
 
 and unwrap_id : T.dyn -> T.id T.maybe_exn
   = fun s ->
@@ -188,7 +188,7 @@ and format_runtime_exn
           expected given
           (pp_print_list ~pp_sep:pp_print_space format_scheme_obj) objs
       | Type_mismatch (contract, obj) ->
-        fprintf fmt "@[<2>%s:@ %s;@ @[<2>predicate: %s@;falsified by: %a@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@ @[<2>predicate: %s@;unsatisfied by: %a@]@]"
           "XXX" "contract violation"
           contract
           format_scheme_obj obj
@@ -199,4 +199,4 @@ and format_runtime_exn
       | Parser str ->
         fprintf fmt "@[<2>%s:@ %s;@ @[<2>%s@]@]"
           "XXX" "syntax error" str
-    in fprintf fmt "@[<1>%a@]" ind exc
+    in fprintf fmt "@[%a@]" ind exc

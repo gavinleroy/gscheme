@@ -19,7 +19,8 @@ let start () =
         |> Eval.eval ~env:env
         |> begin function
           | Ok (ref_val, env') ->
-            Util.format_scheme_obj Format.std_formatter !ref_val;
+            Box.get ref_val
+            |> Util.format_scheme_obj Format.std_formatter;
             loop env'
           | Error e ->
             Util.format_runtime_exn Format.std_formatter e;
@@ -28,7 +29,7 @@ let start () =
         Util.format_runtime_exn Format.std_formatter e;
     end; loop env
   in begin
-    Format.pp_set_geometry ~max_indent:4 ~margin:100 Format.std_formatter;
+    Format.pp_set_geometry ~max_indent:6 ~margin:100 Format.std_formatter;
     Printf.printf "Welcome to GScheme v0.0.1";
     loop Env.base
   end

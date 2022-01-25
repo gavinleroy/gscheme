@@ -9,7 +9,7 @@
 module U = Util
 open Types
 
-let rec eval ?env:(e = Env.base) s : (dyn ref * dyn ref Env.t) maybe_exn =
+let rec eval ?env:(e = Env.base) s : (dyn Box.t * dyn Box.t Env.t) maybe_exn =
   match s with
   | s when U.is_bool s -> ret s e
   | s when U.is_int s -> ret s e
@@ -24,8 +24,8 @@ let rec eval ?env:(e = Env.base) s : (dyn ref * dyn ref Env.t) maybe_exn =
     ret v e
 
   | Dyn(ListT, List [ Dyn(IdT, Id "if"); cond; te; fe ]) ->
-    eval ~env:e cond >>= fun (ref_v, _) ->
-    begin match !ref_v with
+    eval ~env:e cond >>= fun (box_v, _) ->
+    begin match Box.get box_v with
       | Dyn(BoolT, Bool true) -> eval ~env:e te
       | _ -> eval ~env:e fe
     end
@@ -34,20 +34,20 @@ let rec eval ?env:(e = Env.base) s : (dyn ref * dyn ref Env.t) maybe_exn =
     eval ~env:e rhs >>= fun (ref_rhs, _) ->
     Env.lookup e sym >>= fun ref_v ->
     begin
-      ref_v := !ref_rhs;
+      Box.copy_from ref_v ref_rhs;
       ret U.make_void e
     end
 
   | Dyn(ListT, List [ Dyn (IdT, Id "map"); func; ls ]) ->
     eval ~env:e func >>= fun (f, _) ->
     eval ~env:e ls >>= fun (ls, _) ->
-    begin match !ls with
+    begin match Box.get ls with
       | Dyn (ListT, List ls) ->
         map_m (fun l ->
             eval ~env:e l >>= fun (l, _) ->
             apply f [l])
           ls >>= fun rs ->
-        List.map (fun v -> !v) rs
+        List.map Box.get rs
         |> U.make_list
         |> (fun ls -> ret ls e)
       | _ -> raise (Unexpected __LOC__)
@@ -102,41 +102,52 @@ let rec eval ?env:(e = Env.base) s : (dyn ref * dyn ref Env.t) maybe_exn =
 
   | v -> raise (Unexpected __LOC__)
 
+and eval_to_ref
+  = fun env exp ->
+    eval ~env:env exp >>= fun (dr, _) ->
+    ok dr
+
+and eval_to_value
+  = fun env exp ->
+    eval_to_ref env exp >>= fun box ->
+    ok (Box.get box)
+
 and define_func
-  : dyn ref Env.t -> id -> dyn ref -> (dyn ref * dyn ref Env.t) maybe_exn
+  : dyn Box.t Env.t -> id -> dyn Box.t -> (dyn Box.t * dyn Box.t Env.t) maybe_exn
   = fun e name obj ->
     Env.extend e name obj
     |> ret U.make_void
 
 and make_func
-  : string option -> dyn ref Env.t -> id list -> dyn list -> dyn ref
+  : string option -> dyn Box.t Env.t -> id list -> dyn list -> dyn Box.t
   = fun va e ps bdy ->
     U.make_lambda { params = ps
                   ; varargs = va
                   ; body = bdy
                   ; closure = e
-                  } |> ref
+                  } |> Box.make
 
 and make_va
-  : string -> (dyn ref Env.t -> id list -> dyn list -> dyn ref)
+  : string -> (dyn Box.t Env.t -> id list -> dyn list -> dyn Box.t)
   = fun va -> make_func (Some va)
 
 and make_fix () = make_func None
 
-and apply : dyn ref -> dyn ref list -> dyn ref maybe_exn
+and apply : dyn Box.t -> dyn Box.t list -> dyn Box.t maybe_exn
   = fun f args ->
     let open U in
-    let unboxed_args = List.map (fun a -> !a) args in
-    match !f with
+    let unboxed_args = List.map Box.get args in
+    match Box.get f with
     | f when is_proc f ->
       (f |> unwrap_proc |> get_ok) unboxed_args
-      >>= fun v -> ok (ref v)
+      >>= fun v -> ok (Box.make v)
 
     | Dyn (LambT, Lamb { params; varargs; body; closure }) ->
+
       let len = List.length in
       let remaining = List.filteri (fun i _ ->
-          len params < i) unboxed_args
-                      |> make_list |> ref
+          len params <= i) unboxed_args
+                      |> make_list |> Box.make
       in
       let bind_var_args a e = match a with
         | None -> e
@@ -162,5 +173,5 @@ and apply : dyn ref -> dyn ref list -> dyn ref maybe_exn
 
     | s -> error (Type_mismatch ("procedure?", s))
 
-and ret : dyn -> dyn ref Env.t -> (dyn ref * dyn ref Env.t) maybe_exn
-  = fun v e -> ok ((ref v), e)
+and ret : dyn -> dyn Box.t Env.t -> (dyn Box.t * dyn Box.t Env.t) maybe_exn
+  = fun v e -> ok ((Box.make v), e)

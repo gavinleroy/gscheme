@@ -99,7 +99,7 @@ and lambda_record = { params : id list
                     ; closure : dyn_ref_map
                     }
 
-and dyn_ref_map = dyn ref Map.Make(String).t
+and dyn_ref_map = dyn Box.t Map.Make(String).t
 
 and runtime_exn =
   | Runtime_error of string
@@ -133,12 +133,14 @@ let trap_exn : type a. a maybe_exn -> (a, string) Result.t
 (* TODO other control flow exn primitives *)
 
 let ( >>= ) = Result.bind
+
 let ( >>| ) = Result.map
 
 let map_m : type a b e. (a -> (b, e) Result.t) -> a list -> (b list, e) Result.t
   = fun f ls ->
-    List.fold_right
-      (fun newr acc ->
-         acc >>= (fun acc_ls ->
-             f newr >>= (fun v ->
-                 ok (v :: acc_ls)))) ls (ok [])
+    (List.fold_left
+       (fun acc  newr->
+          acc >>= (fun acc_ls ->
+              f newr >>= (fun v ->
+                  ok (v :: acc_ls)))) (ok [])) ls
+    >>= (fun l -> List.rev l |> ok)

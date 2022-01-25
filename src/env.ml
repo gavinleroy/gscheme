@@ -46,7 +46,7 @@ module Hidden = struct
       | [ Dyn (DottedT, Dotted ((v :: _), _)) ] ->
         ok v
       | [ arg ] ->
-        error (Type_mismatch ("", arg))
+        error (Type_mismatch ("pair?", arg))
       | args ->
         error (Arity_mismatch (1, List.length args, args))
 
@@ -59,7 +59,7 @@ module Hidden = struct
       | [ Dyn (DottedT, Dotted ((_ :: ls), tl)) ] ->
         U.make_dotted (ls, tl) |> ok
       | [ arg ] ->
-        error (Type_mismatch ("", arg))
+        error (Type_mismatch ("pair?", arg))
       | args ->
         error (Arity_mismatch (1, List.length args, args))
 
@@ -156,7 +156,7 @@ let empty = M.empty
 
 let base =
   let open Hidden in
-  let ext = fun id v e -> extend e id (ref v) in
+  let ext = fun id v e -> extend e id (Box.make v) in
   M.empty
   (* |> ext "datum->syntax" (U.make_proc (fun [v] -> U.datum_to_syntax v |> ok))
    * |> ext "syntax->datum" (U.make_proc (fun [v] -> U.syntax_to_datum v |> ok)) *)

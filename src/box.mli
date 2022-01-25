@@ -6,16 +6,12 @@
 (*                                         *)
 (*******************************************)
 
-type 'a t = 'a ref
+type 'a t
 
-let make v =
-  ref v
+val make : 'a -> 'a t
 
-let get box =
-  !box
+val get : 'a t -> 'a
 
-let set box v =
-  box := v
+val set : 'a t -> 'a -> unit
 
-let copy_from box_to box_from =
-  set box_to (get box_from)
+val copy_from : 'a t -> 'a t -> unit
