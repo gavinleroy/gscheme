@@ -9,61 +9,68 @@
 module U = Util
 open Types
 
-let rec eval ?env:(e = Env.base) s =
+let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
+  let kontinue v = kont (Box.make v, e) in
   match s with
-  | s when U.is_bool s -> ret s e
-  | s when U.is_int s -> ret s e
-  | s when U.is_func s -> ret s e
-  | s when U.is_string s -> ret s e
+  | s when U.is_bool s -> kontinue s
+  | s when U.is_int s -> kontinue s
+  | s when U.is_func s -> kontinue s
+  | s when U.is_string s -> kontinue s
 
   | S_obj (IdT, Id id) ->
-    Env.lookup e id >>= fun v ->
-    ok (v, e)
+    Env.lookup e id >>= fun b ->
+    kont (b, e)
 
   | S_obj (ListT, List [ S_obj (IdT, Id "quote"); v]) ->
-    ret v e
+    kontinue v
 
   | S_obj (ListT, List [ S_obj (IdT, Id "if"); cond; te; fe ]) ->
-    eval ~env:e cond >>= fun (box_v, _) ->
-    begin match Box.get box_v with
-      | S_obj (BoolT, Bool true) -> eval ~env:e te
-      | _ -> eval ~env:e fe
-    end
+    eval cond ~env:e ~kont:(fun (box_v, _) ->
+        match Box.get box_v with
+        | S_obj (BoolT, Bool true) ->
+          eval ~env:e ~kont:kont te
+        | _ ->
+          eval ~env:e ~kont:kont fe)
+
 
   | S_obj (ListT, List [ S_obj (IdT, Id "set!"); S_obj (IdT, Id sym); rhs ]) ->
-    eval ~env:e rhs >>= fun (ref_rhs, _) ->
-    Env.lookup e sym >>= fun ref_v ->
-    begin
-      Box.copy_from ref_v ref_rhs;
-      ret U.make_void e
-    end
+    eval rhs ~env:e ~kont:(fun (ref_rhs, _) ->
+        Env.lookup e sym >>= fun ref_v ->
+        begin
+          Box.copy_from ref_v ref_rhs;
+          kontinue U.make_void
+        end)
 
   | S_obj (ListT, List [ S_obj (IdT, Id "map"); func; ls ]) ->
-    eval ~env:e func >>= fun (f, _) ->
-    eval ~env:e ls >>= fun (ls, _) ->
-    begin match Box.get ls with
-      | S_obj (ListT, List ls) ->
-        map_m (fun l ->
-            eval ~env:e l >>= fun (l, _) ->
-            apply f [l])
-          ls >>= fun rs ->
-        List.map Box.get rs
-        |> U.make_list
-        |> (fun ls -> ret ls e)
-      | _ -> raise (Unexpected __LOC__)
-    end
+    eval func ~env:e ~kont:(fun (box_f, _) ->
+        eval ls ~env:e ~kont:(fun (box_ls, _) ->
+            match Box.get box_ls with
+            | S_obj (ListT, List ls) ->
+              map_m (fun l ->
+                  eval l ~env:e ~kont:(fun (l, _) ->
+                      apply box_f [l] >>| fun v -> (v, e))) ls
+              >>= fun rs ->
+              List.map (fun (b, _) -> Box.get b) rs
+              |> U.make_list
+              |> (fun ls -> kontinue ls)
+            | _ -> raise (Unexpected __LOC__)))
 
   (* define / lambda forms *)
   | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym); rhs]) ->
-    eval ~env:e rhs >>= fun (v, _) ->
-    Env.extend e sym v |> fun e ->
-    ret U.make_void e
+    eval rhs ~env:e ~kont:(fun (box_v, _) ->
+        (* XXX this is obviously simplistic but it should be
+         * checked with the spec if this is correct (i.e. making a new ref)
+         **)
+        let new_box = Box.make_from box_v in
+        Env.extend e sym new_box |> fun e ->
+        kont (Box.make U.make_void, e))
 
   | S_obj (ListT, List (S_obj (IdT, Id "define")
                         :: S_obj (ListT, List (S_obj (IdT, Id fname) :: params))
                         :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
-    define_func e fname (make_fix () e params body)
+    Env.extend e fname (make_fix () e params body) |> fun e ->
+    kont (Box.make U.make_void, e)
 
   | S_obj (ListT, List (S_obj (IdT, Id "define")
                         :: S_obj (DottedT, Dotted
@@ -71,13 +78,14 @@ let rec eval ?env:(e = Env.base) s =
                         :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
     U.unwrap_id varargs >>= fun va_id ->
-    define_func e fname (make_va va_id e params body)
+    Env.extend e fname (make_va va_id e params body) |> fun e ->
+    kont (Box.make U.make_void, e)
 
   | S_obj (ListT, List (S_obj (IdT, Id "lambda")
                         :: S_obj (ListT, List params)
                         :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
-    ok (make_fix () e params body, e)
+    kont (make_fix () e params body, e)
 
   | S_obj (ListT, List (S_obj (IdT, Id "lambda")
                         :: S_obj (DottedT, Dotted
@@ -85,20 +93,21 @@ let rec eval ?env:(e = Env.base) s =
                         :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
     U.unwrap_id varargs >>= fun vararg ->
-    ok (make_va vararg e params body, e)
+    kont (make_va vararg e params body, e)
 
   | S_obj (ListT, List (S_obj (IdT, Id "lambda") :: S_obj (IdT, Id vararg) :: body)) ->
-    ok (make_va vararg e [] body, e)
+    kont (make_va vararg e [] body, e)
 
   (* function application *)
   | S_obj (ListT, List (func :: args)) ->
     let open U in
-    eval ~env:e func >>= fun (f, _) ->
-    map_m (fun arg ->
-        eval ~env:e arg >>= (ok <.> fst))
-      args >>= fun args ->
-    apply f args >>= fun ret_v ->
-    ok (ret_v, e)
+    eval func ~env:e ~kont:(fun (box_f, _) ->
+        map_m (fun a ->
+            eval a ~env:e
+            >>= (ok <.> fst)) args
+        >>= fun args ->
+        apply box_f args >>= fun box_v ->
+        kont (box_v, e))
 
   | v -> raise (Unexpected __LOC__)
 
@@ -111,12 +120,6 @@ and eval_to_value
   = fun env exp ->
     eval_to_ref env exp >>= fun box ->
     ok (Box.get box)
-
-and define_func
-  : scheme_object Box.t Env.t -> id -> scheme_object Box.t -> (scheme_object Box.t * scheme_object Box.t Env.t) maybe_exn
-  = fun e name obj ->
-    Env.extend e name obj
-    |> ret U.make_void
 
 and make_func
   : string option -> scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t
@@ -159,28 +162,47 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
         Env.extend_many closure params args
         |> bind_var_args varargs
         |> fun e ->
-
-        (* XXX FIXME using map_m like this does not
-         * update the environment between expressions
-         * like it should e.g.
-         *   ((lambda (x) (define y 3) (+ x y)) 2)
-         *    => 5
-         * NOTE this is used in several places not just here
-         **)
-        map_m (eval ~env:e) body
-        >>= (ok <.> fst <.> List.last)
+        thread_eval ~env:e body
+        >>= (ok <.> fst)
       end
 
     | s -> error (Type_mismatch ("procedure?", s))
 
-and ret : scheme_object -> scheme_object Box.t Env.t -> (scheme_object Box.t * scheme_object Box.t Env.t) maybe_exn
-  = fun v e -> ok ((Box.make v), e)
+and ret v e = ok ((Box.make v), e)
 
+and thread_eval ?env:(env = Env.base) ?kont:(k = final_kont) es =
+  match es with
+  | [] -> raise (Unexpected "")
+  | [e] -> eval e ~env:env ~kont:k
+  | e :: es ->
+    eval e ~env:env ~kont:(fun (_, env') ->
+        thread_eval es ~env:env' ~kont:k)
+
+and final_kont = ok
+
+(* evaluation tests *)
 
 let%test_module _ = (module struct
 
   open Types
+  open Util
   open Util.Test
+
+  let str_to_obj s =
+    (Parser.sexpr_of_string s
+     >>= (fun s ->
+         Ok (scheme_object_of_sexp s)))
+    |> get_ok
+
+  let eval_single_from_str line =
+    Parser.sexpr_of_string line
+    >>= (eval_to_value Env.base
+         <.> scheme_object_of_sexp)
+
+  let eval_many_from_str lines =
+    (List.map str_to_obj lines
+     |> thread_eval)
+    >>= (ok <.> fst)
 
   let%test _ = (
     let obj = (S_obj (IntT, Int 1L)) in
@@ -196,5 +218,47 @@ let%test_module _ = (module struct
     expect_exn (Free_var ("", ""))
       (let obj = (S_obj (IdT, Id "atom")) in
        eval_to_value Env.empty obj))
+
+  let%test _ = (
+    eval_single_from_str "(map (lambda (x) (* 2 x)) '(1 2 3 4))"
+    = Ok (make_list [make_int 2L; make_int 4L; make_int 6L; make_int 8L]))
+
+  let%test _ = (
+    (eval_many_from_str [ "(define x 1)"
+                        ; "(define y 2)"
+                        ; "(define (foo z)
+                            (define o x)
+                            (set! x y)
+                            (set! y z)
+                            o)"
+                        ; "(foo 3)" ]
+     >>| Box.get)
+    = Ok (make_int 1L))
+
+  let%test _ = (
+    (eval_many_from_str [ "(define x 1)"
+                        ; "(define y 2)"
+                        ; "(define (foo z)
+                            (define o x)
+                            (set! x y)
+                            (set! y z)
+                            o)"
+                        ; "(foo 3)"
+                        ; "x"]
+     >>| Box.get)
+    = Ok (make_int 2L))
+
+  let%test _ = (
+    (eval_many_from_str [ "(define x 1)"
+                        ; "(define y 2)"
+                        ; "(define (foo z)
+                            (define o x)
+                            (set! x y)
+                            (set! y z)
+                            o)"
+                        ; "(foo 3)"
+                        ; "y"]
+     >>| Box.get)
+    = Ok (make_int 3L))
 
 end)

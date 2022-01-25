@@ -135,7 +135,7 @@ let trap_exn : type a. a maybe_exn -> (a, string) Result.t
 
 let ( >>= ) = Result.bind
 
-let ( >>| ) = Result.map
+let ( >>| ) = fun f s -> Result.map s f
 
 let map_m : type a b e. (a -> (b, e) Result.t) -> a list -> (b list, e) Result.t
   = fun f ls ->

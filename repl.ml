@@ -15,7 +15,7 @@ let start () =
     print_string "> ";
     begin match read_line () |> Parser.sexpr_of_string with
       | Ok ast ->
-        Util.dyn_of_sexp ast
+        Util.scheme_object_of_sexp ast
         |> Eval.eval ~env:env
         |> begin function
           | Ok (ref_val, env') ->

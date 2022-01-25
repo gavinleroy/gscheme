@@ -60,17 +60,17 @@ and unwrap_proc : T.scheme_object -> (T.scheme_object list -> T.scheme_object T.
     | S_obj (ProcT, Proc f) -> ok f
     | _ -> error (Type_mismatch ("procedure?", s))
 
-and dyn_of_sexp : T.sexp -> T.scheme_object
+and scheme_object_of_sexp : T.sexp -> T.scheme_object
   = function
     | SexpBool b -> make_bool b
     | SexpInt i -> make_int i
     | SexpId i -> make_id i
     | SexpString s -> make_string s
     | SexpList l ->
-      make_list (List.map dyn_of_sexp l)
+      make_list (List.map scheme_object_of_sexp l)
     | SexpDotted (hd, tl) ->
-      let hd = List.map dyn_of_sexp hd in
-      begin match dyn_of_sexp tl with
+      let hd = List.map scheme_object_of_sexp hd in
+      begin match scheme_object_of_sexp tl with
         | S_obj (DottedT, Dotted (hd', tl)) ->
           make_dotted (hd @ hd', tl)
         | S_obj (ListT, List ls) ->

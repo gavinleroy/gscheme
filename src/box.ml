@@ -14,6 +14,9 @@ let make v =
 let get box =
   !box
 
+let make_from bx =
+  make (get bx)
+
 let set box v =
   box := v
 
