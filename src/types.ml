@@ -80,7 +80,10 @@ end
 
 module Scopes = Set.Make(Scope)
 
-type stx = symbol * Scopes.t
+(* type stx = symbol * Scopes.t *)
+type syntax = { e : symbol
+              ; scopes : Scopes.t
+              }
 
 let core_forms = [ "lambda"
                  ; "let-syntax"
@@ -111,7 +114,7 @@ type _ scheme_type =
   | CharT : Char.t scheme_type
   | StringT : String.t scheme_type
   | IdT : id scheme_type
-  | StxT : stx scheme_type
+  | StxT : syntax scheme_type
   | ListT : scheme_object list scheme_type
   | VecT : scheme_object Vector.t scheme_type
   | DottedT : (scheme_object list * scheme_object) scheme_type
@@ -126,7 +129,7 @@ and _ value =
   | Char : Char.t -> Char.t value
   | String : String.t -> String.t value
   | Id : id -> id value
-  | Stx : stx -> stx value
+  | Stx : syntax -> syntax value
   | List : 'a list -> 'a list value
   | Vec : scheme_object Vector.t -> scheme_object Vector.t value
   | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) value

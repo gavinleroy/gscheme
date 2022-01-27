@@ -175,6 +175,12 @@ let base : scheme_object Box.t t
   |> ext "string?" (U.make_proc (predicate U.is_string))
   |> ext "procedure?" (U.make_proc (predicate U.is_func))
 
+  (* numerical predicates *)
+  |> ext "integer?" (U.make_proc (predicate U.is_int))
+
+  (* general boolean *)
+  |> ext "not" (U.make_proc (predicate U.is_not))
+
   |> ext "cons" (U.make_proc cons)
   |> ext "car" (U.make_proc car)
   |> ext "cdr" (U.make_proc cdr)
@@ -182,8 +188,6 @@ let base : scheme_object Box.t t
   |> ext "+" (U.make_proc (num_binop Number.add))
   |> ext "-" (U.make_proc (num_binop Number.sub))
   |> ext "*" (U.make_proc (num_binop Number.mul))
-(* |> ext "/" (U.make_proc (num_binop Number.div)) *)
-(* |> ext "=" (U.make_proc (num_bool_binop Number.equal)) *)
 
 let%test_module _ = (module struct
 

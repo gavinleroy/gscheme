@@ -146,6 +146,10 @@ and is_stx = function
   | T.S_obj (StxT, Stx _) -> true
   | _ -> false
 
+and is_not = function
+  | T.S_obj (BoolT, Bool false) -> true
+  | _ -> false
+
 and make_void = T.S_obj (VoidT, Void)
 
 and make_bool b = T.S_obj (BoolT, Bool b)
@@ -189,8 +193,8 @@ and format_scheme_obj
         fprintf fmt "%s" s
       | S_obj (NumT, Num (T.Number.Int i)) ->
         fprintf fmt "%Li" i
-      | S_obj (StxT, Stx (e, scopes)) ->
-        fprintf fmt "#<syntax %s>" e
+      | S_obj (StxT, Stx s) ->
+        fprintf fmt "#<syntax %s>" s.e
       | S_obj (ListT, List [S_obj (IdT, Id "quote"); rhs]) ->
         fprintf fmt "'%a" fso rhs
       | S_obj (ListT, List ls) ->
@@ -233,6 +237,12 @@ and format_runtime_exn
     in fprintf fmt "@[%a@]" ind exc
 
 module Test = struct
+
+  let string_to_datum s =
+    Parser.sexpr_of_string s
+    |> function
+    | Ok ast -> scheme_object_of_sexp ast
+    | Error s -> raise (T.Unexpected __LOC__)
 
   let expect_exn : type a. Types.runtime_exn -> a Types.maybe_exn -> bool
   (** Check that the expected type of runtime exception was returned.
