@@ -21,18 +21,23 @@ module Hidden = struct
         op l r |> U.make_bool |> ok
       | _ -> error (Arity_mismatch (2, List.length args, args))
 
-  let num_binop : (int64 -> int64 -> int64) -> scheme_object list -> scheme_object maybe_exn
+  let num_binop : (Number.t -> Number.t -> Number.t) -> scheme_object list -> scheme_object maybe_exn
     = fun op ls ->
       match ls with
       (* TODO require at least two arguments for numeric operations, however,
        *      some could be done with 1. For example, (+ 1) => 1
        **)
       | (_ :: _ :: _) ->
-        map_m U.unwrap_int ls
+        map_m U.unwrap_num ls
         >>= fun ls ->
         U.List.foldl1 op ls
-        |> U.make_int |> ok
+        |> U.make_num |> ok
       | _ -> error (Arity_mismatch (2, List.length ls, ls))
+
+  let predicate : (scheme_object -> bool) -> (scheme_object list -> scheme_object maybe_exn)
+    = fun t -> fun ls -> match ls with
+      | [ o ] -> Ok (U.make_bool (t o))
+      | _ -> error (Arity_mismatch (1, List.length ls, ls))
 
   let num_bool_binop = bool_binop U.unwrap_int
   let bool_bool_binop = bool_binop U.unwrap_bool
@@ -159,16 +164,26 @@ let base : scheme_object Box.t t
   let ext = fun id v e -> extend e id (Box.make v) in
   M.empty
 
+  (* predicates *)
+  |> ext "boolean?" (U.make_proc (predicate U.is_bool))
+  |> ext "symbol?" (U.make_proc (predicate U.is_id))
+  |> ext "char?" (U.make_proc (predicate U.is_char))
+  |> ext "vector?" (U.make_proc (predicate U.is_vector))
+  |> ext "null?" (U.make_proc (predicate U.is_null))
+  |> ext "pair?" (U.make_proc (predicate U.is_pair))
+  |> ext "number?" (U.make_proc (predicate U.is_number))
+  |> ext "string?" (U.make_proc (predicate U.is_string))
+  |> ext "procedure?" (U.make_proc (predicate U.is_func))
+
   |> ext "cons" (U.make_proc cons)
   |> ext "car" (U.make_proc car)
   |> ext "cdr" (U.make_proc cdr)
 
-  |> ext "+" (U.make_proc (num_binop Int64.add))
-  |> ext "-" (U.make_proc (num_binop Int64.sub))
-  |> ext "*" (U.make_proc (num_binop Int64.mul))
-  |> ext "/" (U.make_proc (num_binop Int64.div))
-  |> ext "remainder" (U.make_proc (num_binop Int64.rem))
-  |> ext "=" (U.make_proc (num_bool_binop Int64.equal))
+  |> ext "+" (U.make_proc (num_binop Number.add))
+  |> ext "-" (U.make_proc (num_binop Number.sub))
+  |> ext "*" (U.make_proc (num_binop Number.mul))
+(* |> ext "/" (U.make_proc (num_binop Number.div)) *)
+(* |> ext "=" (U.make_proc (num_bool_binop Number.equal)) *)
 
 let%test_module _ = (module struct
 

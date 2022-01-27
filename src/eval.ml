@@ -9,6 +9,8 @@
 module U = Util
 open Types
 
+(* TODO restrict access with an interface *)
+
 let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
   let kontinue v = kont (Box.make v, e) in
   match s with
@@ -27,10 +29,11 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
   | S_obj (ListT, List [ S_obj (IdT, Id "if"); cond; te; fe ]) ->
     eval cond ~env:e ~kont:(fun (box_v, _) ->
         match Box.get box_v with
-        | S_obj (BoolT, Bool true) ->
-          eval ~env:e ~kont:kont te
+        | S_obj (BoolT, Bool false) ->
+          (* NOTE the only false value in scheme is #f *)
+          eval ~env:e ~kont:kont fe
         | _ ->
-          eval ~env:e ~kont:kont fe)
+          eval ~env:e ~kont:kont te)
 
 
   | S_obj (ListT, List [ S_obj (IdT, Id "set!"); S_obj (IdT, Id sym); rhs ]) ->
@@ -102,6 +105,7 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
   | S_obj (ListT, List (func :: args)) ->
     let open U in
     eval func ~env:e ~kont:(fun (box_f, _) ->
+
         map_m (fun a ->
             eval a ~env:e
             >>= (ok <.> fst)) args
@@ -110,6 +114,16 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
         kont (box_v, e))
 
   | v -> raise (Unexpected __LOC__)
+
+(** Evaluate the list of expressions passing the returned environment
+    to the next eval *)
+and thread_eval ?env:(env = Env.base) ?kont:(k = final_kont) es =
+  match es with
+  | [] -> raise (Unexpected "Calling 'thread_eval on an empty list")
+  | [e] -> eval e ~env:env ~kont:k
+  | e :: es ->
+    eval e ~env:env ~kont:(fun (_, env') ->
+        thread_eval es ~env:env' ~kont:k)
 
 and eval_to_ref
   = fun env exp ->
@@ -120,21 +134,6 @@ and eval_to_value
   = fun env exp ->
     eval_to_ref env exp >>= fun box ->
     ok (Box.get box)
-
-and make_func
-  : string option -> scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t
-  = fun va e ps bdy ->
-    U.make_lambda { params = ps
-                  ; varargs = va
-                  ; body = bdy
-                  ; closure = e
-                  } |> Box.make
-
-and make_va
-  : string -> (scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t)
-  = fun va -> make_func (Some va)
-
-and make_fix () = make_func None
 
 and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box.t maybe_exn
   = fun f args ->
@@ -168,17 +167,28 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
 
     | s -> error (Type_mismatch ("procedure?", s))
 
-and ret v e = ok ((Box.make v), e)
+(* small helper functions *)
 
-and thread_eval ?env:(env = Env.base) ?kont:(k = final_kont) es =
-  match es with
-  | [] -> raise (Unexpected "")
-  | [e] -> eval e ~env:env ~kont:k
-  | e :: es ->
-    eval e ~env:env ~kont:(fun (_, env') ->
-        thread_eval es ~env:env' ~kont:k)
+and make_func
+  : string option -> scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t
+  = fun va e ps bdy ->
+    U.make_lambda { params = ps
+                  ; varargs = va
+                  ; body = bdy
+                  ; closure = e
+                  } |> Box.make
 
+and make_va
+  : string -> (scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t)
+  = fun va -> make_func (Some va)
+
+and make_fix () = make_func None
+
+(* the "id" function *)
 and final_kont = ok
+
+let eval_many (* rename out for external use *)
+  = thread_eval
 
 (* evaluation tests *)
 
@@ -205,7 +215,7 @@ let%test_module _ = (module struct
     >>= (ok <.> fst)
 
   let%test _ = (
-    let obj = (S_obj (IntT, Int 1L)) in
+    let obj = (S_obj (NumT, Num (Number.Int 1L))) in
     eval_to_value Env.empty obj
     = Ok obj)
 
@@ -218,6 +228,22 @@ let%test_module _ = (module struct
     expect_exn (Free_var ("", ""))
       (let obj = (S_obj (IdT, Id "atom")) in
        eval_to_value Env.empty obj))
+
+  let%test _ = (
+    eval_single_from_str "(if #f 1 0)"
+    = Ok (make_int 0L))
+
+  let%test _ = (
+    eval_single_from_str "(if '() 1 0)"
+    = Ok (make_int 1L))
+
+  let%test _ = (
+    eval_single_from_str "(if '(1 2 3) 1 0)"
+    = Ok (make_int 1L))
+
+  let%test _ = (
+    eval_single_from_str "(if (lambda x x) 1 0)"
+    = Ok (make_int 1L))
 
   let%test _ = (
     eval_single_from_str "(map (lambda (x) (* 2 x)) '(1 2 3 4))"
@@ -244,7 +270,7 @@ let%test_module _ = (module struct
                             (set! y z)
                             o)"
                         ; "(foo 3)"
-                        ; "x"]
+                        ; "x" ]
      >>| Box.get)
     = Ok (make_int 2L))
 
@@ -257,8 +283,15 @@ let%test_module _ = (module struct
                             (set! y z)
                             o)"
                         ; "(foo 3)"
-                        ; "y"]
+                        ; "y" ]
      >>| Box.get)
     = Ok (make_int 3L))
+
+  let%test _ = (
+    (eval_many_from_str [ "(define (f x) (+ x 42))"
+                        ; "(define (g p x) (p x))"
+                        ; "(g f 23)" ]
+     >>| Box.get)
+    = Ok (make_int 65L))
 
 end)

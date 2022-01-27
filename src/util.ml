@@ -36,8 +36,15 @@ let rec unwrap_int : T.scheme_object -> int64 T.maybe_exn
   = fun s ->
     let open T in
     match s with
-    | S_obj (IntT, Int i) -> T.ok i
-    | s -> T.error (T.Type_mismatch ("int?", s))
+    | S_obj (NumT, Num (T.Number.Int i)) -> T.ok i
+    | s -> error (T.Type_mismatch ("int?", s))
+
+and unwrap_num : T.scheme_object -> T.Number.t T.maybe_exn
+  = fun s ->
+    let open T in
+    match s with
+    | S_obj (NumT, Num n) -> T. ok n
+    | _ -> error (Type_mismatch ("number?", s))
 
 and unwrap_bool : T.scheme_object -> bool T.maybe_exn
   = fun s ->
@@ -86,6 +93,10 @@ and is_id = function
   | T.S_obj (IdT, Id _) -> true
   | _ -> false
 
+and is_char = function
+  | T.S_obj (CharT, Char _) -> true
+  | _ -> false
+
 and is_string = function
   | T.S_obj (StringT, String _) -> true
   | _ -> false
@@ -94,12 +105,30 @@ and is_bool = function
   | T.S_obj (BoolT, Bool _) -> true
   | _ -> false
 
+and is_number = function
+  | T.S_obj (NumT, Num _) -> true
+  | _ -> false
+
 and is_int = function
-  | T.S_obj (IntT, Int _) -> true
+  | T.S_obj (NumT, Num (T.Number.Int _)) -> true
+  | _ -> false
+
+(* a pair is a tuple or non-empty list *)
+and is_pair = function
+  | T.S_obj (DottedT, Dotted _)
+  | T.S_obj (ListT, List (_ :: _)) -> true
   | _ -> false
 
 and is_list = function
   | T.S_obj (ListT, List _) -> true
+  | _ -> false
+
+and is_vector = function
+  | T.S_obj (VecT, Vec _) -> true
+  | _ -> false
+
+and is_null = function
+  | T.S_obj (ListT, List []) -> true
   | _ -> false
 
 and is_proc = function
@@ -125,7 +154,9 @@ and make_id id = T.S_obj (IdT, Id id)
 
 and make_string s = T.S_obj (StringT, String s)
 
-and make_int i = T.S_obj (IntT, Int i)
+and make_num n = T.S_obj (NumT, Num n)
+
+and make_int i = T.S_obj (NumT, Num (T.Number.Int i))
 
 and make_list l = T.S_obj (ListT, List l)
 
@@ -156,7 +187,7 @@ and format_scheme_obj
         fprintf fmt "\"%s\"" s
       | S_obj (IdT, Id s) ->
         fprintf fmt "%s" s
-      | S_obj (IntT, Int i) ->
+      | S_obj (NumT, Num (T.Number.Int i)) ->
         fprintf fmt "%Li" i
       | S_obj (StxT, Stx (e, scopes)) ->
         fprintf fmt "#<syntax %s>" e

@@ -13,8 +13,47 @@ include Result
 (* signals an internal error FIXME remove *)
 exception Unexpected of string
 
+(* MODULE types that will eventually be moved *)
+
+module Char = struct
+  (* chars should follow unicode standard *)
+  type t = char
+end
+
+module String = struct
+  (* currently restrict strings to be the
+     OCaml definition *)
+  include Stdlib.String
+end
+
+module Number = struct
+  (* only support OCaml integer 64 numbers *)
+  type t = | Int of int64
+
+  let add lhs rhs = match lhs, rhs with
+    | Int l, Int r -> Int (Int64.add l r)
+
+  let mul lhs rhs = match lhs, rhs with
+    | Int l, Int r -> Int (Int64.mul l r)
+
+  let sub lhs rhs = match lhs, rhs with
+    | Int l, Int r -> Int (Int64.sub l r)
+end
+
 module Identifier = struct
   type t = string
+end
+
+module Vector :sig
+  type 'a t
+  val get : 'a t -> int -> 'a
+  val set : 'a t -> int -> 'a -> unit
+end = struct
+  type 'a t = 'a array
+  let get vec pos =
+    vec.(pos)
+  let set vec pos upd =
+    vec.(pos) <- upd
 end
 
 type id = Identifier.t
@@ -68,34 +107,38 @@ type sexp =
 type _ scheme_type =
   | VoidT : unit scheme_type
   | BoolT : bool scheme_type
-  | IntT : int64 scheme_type
+  | NumT : Number.t scheme_type
+  | CharT : Char.t scheme_type
   | StringT : String.t scheme_type
   | IdT : id scheme_type
   | StxT : stx scheme_type
   | ListT : scheme_object list scheme_type
+  | VecT : scheme_object Vector.t scheme_type
   | DottedT : (scheme_object list * scheme_object) scheme_type
   | LambT : lambda_record scheme_type
   | ProcT : proc_sig scheme_type
   | PortT : port scheme_type
 
-and _ data =
-  | Void : unit data
-  | Bool : bool -> bool data
-  | Int : int64 -> int64 data
-  | String : String.t -> String.t data
-  | Id : id -> id data
-  | Stx : stx -> stx data
-  | List : 'a list -> 'a list data
-  | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) data
-  | Lamb : lambda_record -> lambda_record data
-  | Proc : proc_sig -> proc_sig data
-  | Port : port -> port data
+and _ value =
+  | Void : unit value
+  | Bool : bool -> bool value
+  | Num : Number.t -> Number.t value
+  | Char : Char.t -> Char.t value
+  | String : String.t -> String.t value
+  | Id : id -> id value
+  | Stx : stx -> stx value
+  | List : 'a list -> 'a list value
+  | Vec : scheme_object Vector.t -> scheme_object Vector.t value
+  | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) value
+  | Lamb : lambda_record -> lambda_record value
+  | Proc : proc_sig -> proc_sig value
+  | Port : port -> port value
 
 and proc_sig = (scheme_object list -> scheme_object maybe_exn)
 
 and (_, _) eq = Eq : ('a, 'a) eq
 
-and scheme_object = S_obj : 'a scheme_type * 'a data -> scheme_object
+and scheme_object = S_obj : 'a scheme_type * 'a value -> scheme_object
 
 and lambda_record = { params : id list
                     ; varargs : id option
