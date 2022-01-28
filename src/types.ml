@@ -87,8 +87,10 @@ type syntax = { e : symbol
 
 let core_forms = [ "lambda"
                  ; "let-syntax"
+                 (* ; "#%app" *)
                  ; "quote"
-                 ; "quote-syntax" ]
+                 ; "quote-syntax"
+                 ]
 
 let core_primitives = [ "datum->syntax"
                       ; "syntax->datum"
@@ -97,7 +99,8 @@ let core_primitives = [ "datum->syntax"
                       ; "cons"
                       ; "car"
                       ; "cdr"
-                      ; "map" ]
+                      ; "map"
+                      ]
 
 type sexp =
   | SexpBool of bool

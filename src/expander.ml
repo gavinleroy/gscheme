@@ -64,6 +64,10 @@ and syntax_to_datum : scheme_object -> scheme_object
       S_obj (ListT, List (List.map syntax_to_datum ls))
     | _ -> stx
 
+and is_identifier = function
+  | S_obj (StxT, Stx _) -> true
+  | _ -> false
+
 let%test_module "datum->syntax->datum" = (module struct
   open Util
   open Test
@@ -149,7 +153,6 @@ let%test_module "scope operations" = (module struct
   let loc_c2 = nl ()
   let%test _ = (sc1 = sc1)
   let%test _ = (sc1 = sc2 |> not)
-  (* adding flipping scopes *)
   let%test _ = ((add_scope
                    (datum_to_syntax (string_to_datum "x"))
                    sc1)
@@ -215,6 +218,9 @@ and check_unambiguous s =
         raise (Ambiguous_candidate_exn
                  "some usefull message :)"))
 
+and is_free_identifier a b =
+  resolve a = resolve b
+
 let%test_module _ = (module struct
   open Util
   open Test
@@ -258,6 +264,32 @@ let%test_module _ = (module struct
                 with Ambiguous_candidate_exn _ -> true)
   let%test _ = (find_all_matching_bindings { e = "a"; scopes = Scopes.singleton sc2 }
                 = [])
+  let%test _ = (is_free_identifier (make_stx { e = "a"; scopes = Scopes.of_list [ sc1 ] })
+                  (make_stx { e = "a"; scopes = Scopes.of_list [ sc1; sc2 ] }))
+  let%test _ = (is_free_identifier (make_stx { e = "b"; scopes = Scopes.of_list [ sc1 ] })
+                  (make_stx { e = "b"; scopes = Scopes.of_list [ sc1; sc2 ] }))
+
+  module S = Set.Make(struct
+      type t = syntax
+      let compare s s' =
+        if s.e = s'.e then
+          Scopes.compare s.scopes s'.scopes
+        else String.compare s.e s'.e end)
+
+  let%test _ = (let open S in
+                equal (find_all_matching_bindings b_in |> of_list)
+                  (of_list [b_in; b_out]))
+  let%test _ = (let open S in
+                equal (find_all_matching_bindings
+                         { e = "c"; scopes = Scopes.of_list [sc1; sc2] }
+                       |> of_list)
+                  (of_list [c1; c2]))
+  let%test _ = (check_unambiguous b_in [b_out; b_in]
+                = ())
+  let%test _ = (try check_unambiguous c2 [c1; c2];
+                  false
+                with Ambiguous_candidate_exn _ ->
+                  true)
 end)
 
 (********************************************
@@ -278,11 +310,19 @@ let bind_core_forms_primitives
     CoreIDSet.union core_forms core_primitives
     |> CoreIDSet.iter (fun str ->
         add_binding
-          (str, Scopes.singleton core_scope)
-          (S_obj (IdT, Id str)))
+          { e = str; scopes = Scopes.singleton core_scope }
+          (U.make_id str))
 
 let introduce s =
   add_scope s core_scope
+
+let%test_module "core syntax tests" = (module struct
+  let%test _ = (resolve (datum_to_syntax (U.make_id "lambda"))
+                = None)
+  let%test _ = (resolve (introduce (datum_to_syntax
+                                      (U.make_id "lambda")))
+                = Some (U.make_id "lambda"))
+end)
 
 (********************************************
  ** Compile time environment *)
@@ -300,24 +340,39 @@ let empty_env =
   Env.empty
 
 let variable =
-  S_obj (IdT, Id (Gensym.gensym ()))
+  U.make_id (Gensym.gensym ~sym:"variable" ())
+
+let missing =
+  U.make_id (Gensym.gensym ~sym:"missing" ())
 
 let env_extend (* : TODO add type *)
   = fun env k v -> match k with
     | S_obj (IdT, Id key) ->
       Env.add key v env
-    | _ -> raise_unexpected __LOC__ k
+    | _ -> raise (Unexpected __LOC__)
 
 let env_lookup (* : TODO add type *)
   = fun env bnd -> match bnd with
     | S_obj (IdT, Id binding) ->
-      Env.find_opt binding env
-    | _ -> raise_unexpected __LOC__ bnd
+      begin match Env.find_opt binding env with
+        | Some v -> v
+        | None -> missing
+      end
+    | _ -> raise (Unexpected __LOC__)
 
-let add_local_binding ((e, scopes) as id) =
-  let key = S_obj (IdT, Id (Gensym.gensym ~sym:e ())) in
+let add_local_binding id =
+  let key = U.make_id (Gensym.gensym ~sym:id.e ()) in
   add_binding id key;
   key
+
+let%test_module "compile time env tests" = (module struct
+  let sc1 = Scope.fresh ()
+  let sc2 = Scope.fresh ()
+  let loc_d = add_local_binding { e = "d"; scopes = Scopes.of_list [ sc1; sc2 ] }
+  let%test _ = (
+    resolve (U.make_stx { e = "d"; scopes = Scopes.of_list [ sc1; sc2 ] })
+    = Some loc_d)
+end)
 
 (********************************************
  ** Expansion dispatch *)
@@ -326,13 +381,17 @@ exception Bad_syntax of string
 
 let rec expand ?env:(e = empty_env) s =
   match s with
-  | S_obj (StxT, _) ->
+  | s when is_identifier s ->
     expand_identifier s e
-  | S_obj (ListT, List (S_obj (StxT, _) :: _)) ->
+  | S_obj (ListT, List (car :: _))
+    when is_identifier car ->
     expand_id_application_form s e
-  | S_obj (ListT, _) ->
+  | s when (U.is_pair s || U.is_null s) ->
     expand_app s e
-  | v -> raise (Bad_syntax ("'expand bad syntax: "))
+  | v ->
+    (* if not an identifier or parens: this gets implicitly quoted *)
+    U.make_list [ U.make_stx { e = "quote"; scopes = Scopes.singleton core_scope }
+                ; s ]
 
 and expand_identifier s env =
   match resolve s with
@@ -344,13 +403,14 @@ and expand_identifier s env =
     else if CoreIDSet.mem binding core_forms then
       raise (Bad_syntax ("'expand_identifier bad syntax: "))
     else begin match env_lookup env d with
-      | None ->
+      | v when v = missing ->
         raise (Bad_syntax ("out of context: "))
-      | Some v ->
-        if v = variable then
-          s
-        else
-          raise (Bad_syntax ("'expand_identifier bad syntax: "))
+      | v when v = variable ->
+        s
+      | v when U.is_proc v ->
+        expand (apply_transformer v s) env
+      | _ (* else *) ->
+        raise (Bad_syntax "illegal use of syntax:")
     end
 
 and expand_id_application_form (* : TODO add type *)
@@ -362,18 +422,24 @@ and expand_id_application_form (* : TODO add type *)
           expand_lambda s env
         | Some (S_obj (IdT, Id "let-syntax")) ->
           expand_let_syntax s env
+
+        (* | Some (S_obj (IdT, Id "#%app")) ->
+         *   let S_obj (ListT, List (app_id :: es)) in
+         *   expand_app es env *)
+
         | Some (S_obj (IdT, Id "quote"))
         | Some (S_obj (IdT, Id "quote-syntax")) ->
           s
         | Some binding ->
           begin match env_lookup env binding with
-            | Some (S_obj (LambT, Lamb f)) ->
-              expand (apply_transformer f s) ~env:env
-            | _ -> expand_app s env
+            | v when U.is_proc v ->
+              expand (apply_transformer v s) ~env:env
+            | v ->
+              expand_app s env
           end
-        | None -> raise_unexpected __LOC__ id
+        | None -> raise (Unexpected __LOC__)
       end
-    | _ -> raise_unexpected __LOC__ s
+    | _ -> raise (Unexpected __LOC__)
 
 and apply_transformer : (scheme_object list -> scheme_object) -> scheme_object -> scheme_object
   = fun t s ->
@@ -385,21 +451,21 @@ and apply_transformer : (scheme_object list -> scheme_object) -> scheme_object -
 and expand_lambda (* : TODO add type *)
   = fun s env -> match s with
     | S_obj (ListT, List [ lambda_id
-                         ; S_obj (ListT, List [arg_id])
+                         ; S_obj (ListT, List arg_ids)
                          ; body]) ->
       let sc = Scope.fresh () in
-      let id = add_scope arg_id sc in
-      begin match id with
-        | (S_obj (StxT, Stx id) as stx_id) ->
-          let binding = add_local_binding id in
-          let body_env = env_extend env binding variable in
-          let exp_body = expand (add_scope body sc) ~env:body_env in
-          S_obj (ListT, List [ lambda_id
-                             ; S_obj (ListT, List [stx_id])
-                             ; exp_body])
-        | _ -> raise_unexpected __LOC__ id
-      end
-    | v -> raise_unexpected __LOC__ v
+      let ids = List.map (fun id -> add_scope id sc) arg_ids in
+      let bindings = List.map (function
+          | S_obj (StxT, Stx s) ->
+            add_local_binding s
+          | _ -> raise (Unexpected __LOC__)) ids
+      in
+      let body_env = List.fold_left (fun env bnd ->
+          env_extend env bnd variable) env bindings
+      in
+      let exp_body = expand ~env:body_env (add_scope body sc) in
+      U.make_list [ lambda_id; U.make_list ids; exp_body ]
+    | _ -> raise (Unexpected __LOC__)
 
 and expand_let_syntax (* : TODO add type *)
   = fun s env ->
@@ -419,14 +485,14 @@ and expand_let_syntax (* : TODO add type *)
           let body_env = env_extend env binding rhs_val in
           expand (add_scope body sc) ~env:body_env
       end
-    | _ -> raise_unexpected __LOC__ s
+    | _ -> raise (Unexpected __LOC__)
 
 and expand_app (* : TODO add type *)
   = fun s env -> match s with
     | S_obj (ListT, List ls) ->
       S_obj (ListT, List (List.map (fun sub_s ->
           expand sub_s ~env:env) ls))
-    | _ -> raise_unexpected __LOC__ s
+    | _ -> raise (Unexpected __LOC__)
 
 (*********************************************)
 
@@ -473,36 +539,21 @@ and eval_compiled s =
   | Result.Error _ ->
     raise_unexpected __LOC__ s
 
-(* short cheap tests to keep everything incrementally working *)
-(* TODO once a real dune project is started move these to a testing dir *)
-let%test_module _ = (module struct
+let%test_module "expansion dispatch tests" = (module struct
+
+  open Util
+  open Test
+  (* Scopes tests *)
+  let nl = fun () -> S_obj (IdT, Id (Gensym.gensym ()))
+  let sc1 = Scope.fresh ()
+  let sc2 = Scope.fresh ()
+  let loc_a = nl ()
+  let loc_b_out = nl ()
+  let loc_b_in = nl ()
+  let loc_c1 = nl ()
+  let loc_c2 = nl ()
 
   let _ = bind_core_forms_primitives ()
-
-  module S = Set.Make(struct
-      type t = (string * Scopes.t)
-      let compare (s, ss) (s', ss') =
-        if s = s' then
-          Scopes.compare ss ss'
-        else String.compare s s' end)
-
-  let%test _ = (let open S in
-                equal (find_all_matching_bindings b_in |> of_list)
-                  (of_list [b_in; b_out]))
-  let%test _ = (let open S in
-                equal (find_all_matching_bindings ("c", Scopes.of_list [sc1; sc2])
-                       |> of_list)
-                  (of_list [c1; c2]))
-  let%test _ = (check_unambiguous b_in [b_out; b_in]
-                = ())
-  let%test _ = (try check_unambiguous c2 [c1; c2];
-                  false
-                with Ambiguous_candidate_exn _ ->
-                  true)
-  let%test _ = (resolve (U.datum_to_syntax (S_obj (IdT, Id "lambda")))
-                = None)
-  let%test _ = (resolve (introduce (U.datum_to_syntax (S_obj (IdT, Id "lambda"))))
-                = Some (S_obj (IdT, Id "lambda")))
 
   let%test _ = (env_lookup (empty_env) loc_a
                 = None)
