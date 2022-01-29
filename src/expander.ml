@@ -32,11 +32,13 @@ let hsh_size =
 module Gensym : sig
   type t = string
   val gensym : ?sym:string -> unit -> t
+  val compare : t -> t -> int
 end = struct
   include String
   type t = string
   let counter = ref 0
   let to_string v = v
+  let compare a b = String.compare a b
   let gensym ?sym:(c = "g") () =
     begin
       incr counter;
@@ -408,7 +410,7 @@ and expand_identifier s env =
       | v when v = variable ->
         s
       | v when U.is_proc v ->
-        expand (apply_transformer v s) env
+        expand ~env:env (apply_transformer v s)
       | _ (* else *) ->
         raise (Bad_syntax "illegal use of syntax:")
     end
@@ -433,7 +435,7 @@ and expand_id_application_form (* : TODO add type *)
         | Some binding ->
           begin match env_lookup env binding with
             | v when U.is_proc v ->
-              expand (apply_transformer v s) ~env:env
+              expand ~env:env (apply_transformer v s)
             | v ->
               expand_app s env
           end
@@ -441,8 +443,12 @@ and expand_id_application_form (* : TODO add type *)
       end
     | _ -> raise (Unexpected __LOC__)
 
-and apply_transformer : (scheme_object list -> scheme_object) -> scheme_object -> scheme_object
-  = fun t s ->
+and apply_transformer : scheme_object -> scheme_object -> scheme_object
+  = fun o s ->
+    (* FIXME the transformer should use the same types *)
+    let f = U.unwrap_proc o |> get_ok in
+    let t = fun os -> f os |> get_ok in
+    (****)
     let intro_scope = Scope.fresh () in
     let intro_s = add_scope s intro_scope in
     let transformed_s = t [intro_s] in
@@ -471,27 +477,36 @@ and expand_let_syntax (* : TODO add type *)
   = fun s env ->
     match s with
     | S_obj (ListT, List [ let_syntax_id
-                         ; S_obj (ListT, List [
-                               S_obj (ListT, List [
-                                   lhs_id ; rhs
-                                 ])
-                             ])
+                         ; S_obj (ListT, List
+                                    (* inner list of (lhs; rhs) bindings *)
+                                    trans_bnds
+                                 )
                          ; body]) ->
+      let (trans_ids, trans_rhss) = List.map (function
+          | S_obj (ListT, List [ id; rhs ]) -> (id, rhs)
+          | _ -> raise (Unexpected __LOC__)) trans_bnds
+                                    |> List.split
+      in
       let sc = Scope.fresh () in
-      begin match add_scope lhs_id sc with
-        | S_obj (StxT, Stx id) ->
-          let binding = add_local_binding id in
-          let rhs_val = eval_for_syntax_binding rhs in
-          let body_env = env_extend env binding rhs_val in
-          expand (add_scope body sc) ~env:body_env
-      end
+      let ids = List.map (fun id ->
+          add_scope id sc) trans_ids in
+      let bindings = List.map (function
+          | S_obj (StxT, Stx id) ->
+            add_local_binding id
+          | _ -> raise (Unexpected __LOC__)) trans_ids in
+      let trans_vals = List.map eval_for_syntax_binding trans_rhss in
+      let body_env = List.fold_left2 (fun env bnd vl ->
+          env_extend env bnd vl) env bindings trans_vals in
+      expand ~env:body_env (add_scope body sc)
     | _ -> raise (Unexpected __LOC__)
 
 and expand_app (* : TODO add type *)
   = fun s env -> match s with
-    | S_obj (ListT, List ls) ->
-      S_obj (ListT, List (List.map (fun sub_s ->
-          expand sub_s ~env:env) ls))
+    | S_obj (ListT, List (rator :: rands)) ->
+      U.make_list (
+        (U.make_stx { e = "#%app"; scopes = Scopes.singleton core_scope })
+        :: (expand ~env:env rator)
+        :: (List.map (fun rand -> expand ~env:env rand) rands))
     | _ -> raise (Unexpected __LOC__)
 
 (*********************************************)
@@ -517,7 +532,7 @@ and compile : scheme_object -> scheme_object
                              ; List.tl ls |> List.hd |> compile ])
         | Some (S_obj (IdT, Id "quote") as quote) ->
           S_obj (ListT, List [ quote
-                             ; List.hd ls |> U.syntax_to_datum ])
+                             ; List.hd ls |> syntax_to_datum ])
         | Some (S_obj (IdT, Id "quote-syntax")) ->
           S_obj (ListT, List [ S_obj (IdT, Id "quote")
                              ; List.hd ls ])
@@ -528,16 +543,17 @@ and compile : scheme_object -> scheme_object
     | (S_obj (StxT, Stx _) as id) ->
       begin match resolve id with
         | Some v -> v
-        | None -> raise_unexpected __LOC__ id
+        | None -> raise (Unexpected __LOC__)
       end
     | _ -> raise (Bad_syntax ("bad syntax after expansion: "))
 
 and eval_compiled s =
   Eval.eval s
   |> function
-  | Result.Ok v -> v
+  | Result.Ok (v, _) ->
+    Box.get v
   | Result.Error _ ->
-    raise_unexpected __LOC__ s
+    raise (Unexpected __LOC__)
 
 let%test_module "expansion dispatch tests" = (module struct
 
@@ -556,81 +572,84 @@ let%test_module "expansion dispatch tests" = (module struct
   let _ = bind_core_forms_primitives ()
 
   let%test _ = (env_lookup (empty_env) loc_a
-                = None)
+                = missing)
 
   let%test _ = (env_lookup (env_extend (empty_env) loc_a (S_obj (IdT, Id "variable"))) loc_a
-                = Some (S_obj (IdT, Id "variable")))
+                = variable)
 
-  let%test _ = (let loc_d = add_local_binding ("d", Scopes.of_list [sc1; sc2]) in
-                resolve (S_obj (StxT, Stx ("d", Scopes.of_list [sc1; sc2])))
+  let%test _ = (let loc_d = add_local_binding { e = "d"; scopes = Scopes.of_list [sc1; sc2] } in
+                resolve (U.make_stx { e = "d"; scopes = Scopes.of_list [sc1; sc2] })
                 = Some loc_d)
 
   (* larger expansion tests *)
-  let%test _ = (let dtm = (s2d "(lambda (x) x)") in
-                (U.syntax_to_datum
+  let%test _ = (let dtm = (string_to_datum "(lambda (x) x)") in
+                (syntax_to_datum
                    (expand
                       (add_scope
-                         (U.datum_to_syntax dtm) core_scope)))
+                         (datum_to_syntax dtm) core_scope)))
                 = dtm)
 
   let%test _ = (
-    (U.syntax_to_datum
+    (syntax_to_datum
        (expand
           (add_scope
-             (U.datum_to_syntax
-                (s2d "(let-syntax ((one (lambda (stx)
+             (datum_to_syntax
+                (string_to_datum "(let-syntax ((one (lambda (stx)
                                           (quote-syntax (quote 1)))))
                         (one))")) core_scope))
-     |> (fun scheme_object -> begin U.fmt scheme_object |> print_endline; scheme_object end)
+     |> (fun scheme_object ->
+         begin
+           format_scheme_obj Format.std_formatter scheme_object;
+           print_newline ();
+           scheme_object
+         end)
     )
-    = S_obj (ListT, List [ S_obj (IdT, Id "quote") ; S_obj (IntT, Int 1L) ]))
+    = make_list [ make_id "quote"; make_int 1L ])
 
   let%test _ = (
-    expand (S_obj (StxT, Stx ("cons", Scopes.singleton core_scope)))
-    = S_obj (StxT, Stx ("cons", Scopes.singleton core_scope)))
+    expand (make_stx { e = "cons"; scopes = Scopes.singleton core_scope })
+    = make_stx { e = "cons"; scopes = Scopes.singleton core_scope })
 
   let%test _ = (
-    expand (S_obj (StxT, Stx ("a", Scopes.of_list [sc1]))) ~env:(env_extend empty_env loc_a variable)
-    = (S_obj (StxT, Stx ("a", Scopes.of_list [sc1]))))
+    expand (make_stx { e = "a"; scopes = Scopes.of_list [sc1] }) ~env:(env_extend empty_env loc_a variable)
+    = make_stx { e = "a"; scopes = Scopes.of_list [sc1] })
   let%test _ = (
-    try let _ = expand (S_obj (StxT, Stx ("a", Scopes.empty))) in
+    try let _ = expand (make_stx { e = "a"; scopes = Scopes.empty }) in
       false
     with Bad_syntax _ -> true)
   let%test _ = (
-    expand (S_obj (ListT, List [
-        S_obj (StxT, Stx ("a", Scopes.of_list [sc1]))
-      ; S_obj (ListT, List [ S_obj (StxT, Stx ("quote", Scopes.of_list [core_scope]))
-                           ; S_obj (IntT, Int 1L) ])
-      ])) ~env:(env_extend empty_env loc_a variable)
-    = (S_obj (ListT, List [
-        S_obj (StxT, Stx ("a", Scopes.of_list [sc1]))
-      ; S_obj (ListT, List [ S_obj (StxT, Stx ("quote", Scopes.of_list [core_scope]))
-                           ; S_obj (IntT, Int 1L) ])
-      ])))
+    expand (make_list [
+        make_stx { e = "a"; scopes = Scopes.of_list [sc1] }
+      ; make_list [ make_stx { e = "quote"; scopes = Scopes.of_list [core_scope] }
+                  ; make_int 1L ]]) ~env:(env_extend empty_env loc_a variable)
+    = make_list [ make_stx { e = "a"; scopes = Scopes.of_list [sc1] }
+                ; make_list [ make_stx { e = "quote"; scopes = Scopes.of_list [core_scope] }
+                            ; make_int 1L ]])
 
   (* macro transformers *)
   let%test _ = (
-    expand (introduce (U.datum_to_syntax (s2d "((quote 0) (quote 1))")))
-    = S_obj (ListT, List [ S_obj (ListT, List [ S_obj (StxT, Stx ("quote", Scopes.of_list [core_scope])); S_obj (IntT, Int 0L) ])
-                         ; S_obj (ListT, List [ S_obj (StxT, Stx ("quote", Scopes.of_list [core_scope])); S_obj (IntT, Int 1L) ]) ]))
+    expand (introduce (datum_to_syntax (string_to_datum "((quote 0) (quote 1))")))
+    = make_list [ make_list [ make_stx { e = "quote"; scopes = Scopes.of_list [core_scope] }
+                            ; make_int 0L ]
+                ; make_list [ make_stx { e = "quote"; scopes = Scopes.of_list [core_scope] }
+                            ; make_int 1L ]])
   let transformed_s =
-    apply_transformer (fun [s] ->
+    apply_transformer (make_proc (fun [s] ->
         match s with
         | S_obj (ListT, List (_ :: v :: _)) ->
-          S_obj (ListT, List [v; S_obj (StxT, Stx ("x", Scopes.empty))]))
-      (U.make_list [ S_obj (StxT, Stx ("m", Scopes.empty))
-                   ; S_obj (StxT, Stx ("f", Scopes.of_list [sc1])) ])
-
+          ok (make_list [v; make_stx { e = "x"; scopes = Scopes.empty }])))
+      (make_list [ make_stx { e = "m"; scopes = Scopes.empty }
+                 ; make_stx { e = "f"; scopes = Scopes.of_list [sc1] } ])
   let%test _ = (
-    U.syntax_to_datum transformed_s
-    = S_obj (ListT, List [ S_obj (IdT, Id "f")
-                         ; S_obj (IdT, Id "x") ]))
+    syntax_to_datum transformed_s
+    = make_list [ make_id "f"
+                ; make_id "x" ])
   let%test _ = (
     let (S_obj (ListT, List (f :: _))) = transformed_s in
-    f = S_obj (StxT, Stx ("f", Scopes.of_list [sc1])))
+    f = make_stx { e = "f"; scopes = Scopes.of_list [sc1] })
   let%test _ = (
-    let (S_obj (ListT, List (_ :: S_obj (StxT, Stx (_, scopes)) :: _))) = transformed_s in
-    Scopes.cardinal scopes = 1)
+    let (S_obj (ListT, List (_ :: S_obj (StxT, Stx s) :: _))) = transformed_s in
+    Scopes.cardinal s.scopes = 1)
 end)
 
 [@@@ocaml.warning "+8"]
