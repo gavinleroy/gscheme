@@ -133,7 +133,7 @@ and _ value =
   | String : String.t -> String.t value
   | Id : id -> id value
   | Stx : syntax -> syntax value
-  | List : 'a list -> 'a list value
+  | List : scheme_object list -> scheme_object list value
   | Vec : scheme_object Vector.t -> scheme_object Vector.t value
   | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) value
   | Lamb : lambda_record -> lambda_record value

@@ -60,6 +60,13 @@ and unwrap_id : T.scheme_object -> T.id T.maybe_exn
     | S_obj (IdT, Id id) -> T.ok id
     | s -> error (Type_mismatch ("identifier?", s))
 
+and unwrap_list : T.scheme_object -> T.scheme_object list T.maybe_exn
+  = fun s ->
+    let open T in
+    match s with
+    | S_obj (ListT, List l) -> T.ok l
+    | s -> error (Type_mismatch ("list?", s))
+
 and unwrap_proc : T.scheme_object -> (T.scheme_object list -> T.scheme_object T.maybe_exn) T.maybe_exn
   = fun s ->
     let open T in
