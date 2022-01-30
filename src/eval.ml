@@ -11,7 +11,7 @@ open Types
 
 (* TODO restrict access with an interface *)
 
-let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
+let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   let kontinue v = kont (Box.make v, e) in
   match s with
   | s when U.is_bool s -> kontinue s
@@ -20,7 +20,7 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
   | s when U.is_string s -> kontinue s
 
   | S_obj (IdT, Id id) ->
-    Env.lookup e id >>= fun b ->
+    Namespace.lookup e id >>= fun b ->
     kont (b, e)
 
   | S_obj (ListT, List [ S_obj (IdT, Id "quote"); v]) ->
@@ -38,7 +38,7 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
 
   | S_obj (ListT, List [ S_obj (IdT, Id "set!"); S_obj (IdT, Id sym); rhs ]) ->
     eval rhs ~env:e ~kont:(fun (ref_rhs, _) ->
-        Env.lookup e sym >>= fun ref_v ->
+        Namespace.lookup e sym >>= fun ref_v ->
         begin
           Box.copy_from ref_v ref_rhs;
           kontinue U.make_void
@@ -58,6 +58,16 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
               |> (fun ls -> kontinue ls)
             | _ -> raise (Unexpected __LOC__)))
 
+
+  | S_obj (ListT, List ( S_obj (IdT, Id "list") :: ls )) ->
+    let open U in
+    map_m (fun a ->
+        eval a ~env:e
+        >>= (ok <.> fst)) ls
+    >>| (Box.make <.> U.make_list <.> List.map Box.get)
+    >>= fun box_ls ->
+    kont (box_ls, e)
+
   (* define / lambda forms *)
   | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym); rhs]) ->
     eval rhs ~env:e ~kont:(fun (box_v, _) ->
@@ -65,14 +75,14 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
          * checked with the spec if this is correct (i.e. making a new ref)
          **)
         let new_box = Box.make_from box_v in
-        Env.extend e sym new_box |> fun e ->
+        Namespace.extend e sym new_box |> fun e ->
         kont (Box.make U.make_void, e))
 
   | S_obj (ListT, List (S_obj (IdT, Id "define")
                         :: S_obj (ListT, List (S_obj (IdT, Id fname) :: params))
                         :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
-    Env.extend e fname (make_fix () e params body) |> fun e ->
+    Namespace.extend e fname (make_fix () e params body) |> fun e ->
     kont (Box.make U.make_void, e)
 
   | S_obj (ListT, List (S_obj (IdT, Id "define")
@@ -81,7 +91,7 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
                         :: body)) ->
     map_m U.unwrap_id params >>= fun params ->
     U.unwrap_id varargs >>= fun va_id ->
-    Env.extend e fname (make_va va_id e params body) |> fun e ->
+    Namespace.extend e fname (make_va va_id e params body) |> fun e ->
     kont (Box.make U.make_void, e)
 
   | S_obj (ListT, List (S_obj (IdT, Id "lambda")
@@ -102,10 +112,10 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
     kont (make_va vararg e [] body, e)
 
   (* function application *)
+  | S_obj (ListT, List (S_obj (IdT, Id "#%app") :: func :: args))
   | S_obj (ListT, List (func :: args)) ->
     let open U in
     eval func ~env:e ~kont:(fun (box_f, _) ->
-
         map_m (fun a ->
             eval a ~env:e
             >>= (ok <.> fst)) args
@@ -117,7 +127,7 @@ let rec eval ?env:(e = Env.base) ?kont:(kont = final_kont) s =
 
 (** Evaluate the list of expressions passing the returned environment
     to the next eval *)
-and thread_eval ?env:(env = Env.base) ?kont:(k = final_kont) es =
+and thread_eval ?env:(env = Namespace.base) ?kont:(k = final_kont) es =
   match es with
   | [] -> raise (Unexpected "Calling 'thread_eval on an empty list")
   | [e] -> eval e ~env:env ~kont:k
@@ -153,12 +163,12 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
       in
       let bind_var_args a e = match a with
         | None -> e
-        | Some name -> Env.extend e name remaining
+        | Some name -> Namespace.extend e name remaining
       in
       if len args <> len params && Option.is_none varargs
       then error (Arity_mismatch (len params, len args, unboxed_args))
       else begin
-        Env.extend_many closure params args
+        Namespace.extend_many closure params args
         |> bind_var_args varargs
         |> fun e ->
         thread_eval ~env:e body
@@ -170,7 +180,7 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
 (* small helper functions *)
 
 and make_func
-  : string option -> scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t
+  : string option -> scheme_object Box.t Namespace.t -> id list -> scheme_object list -> scheme_object Box.t
   = fun va e ps bdy ->
     U.make_lambda { params = ps
                   ; varargs = va
@@ -179,7 +189,7 @@ and make_func
                   } |> Box.make
 
 and make_va
-  : string -> (scheme_object Box.t Env.t -> id list -> scheme_object list -> scheme_object Box.t)
+  : string -> (scheme_object Box.t Namespace.t -> id list -> scheme_object list -> scheme_object Box.t)
   = fun va -> make_func (Some va)
 
 and make_fix () = make_func None
@@ -206,7 +216,7 @@ let%test_module _ = (module struct
 
   let eval_single_from_str line =
     Parser.sexpr_of_string line
-    >>= (eval_to_value Env.base
+    >>= (eval_to_value Namespace.base
          <.> scheme_object_of_sexp)
 
   let eval_many_from_str lines =
@@ -216,18 +226,18 @@ let%test_module _ = (module struct
 
   let%test _ = (
     let obj = (S_obj (NumT, Num (Number.Int 1L))) in
-    eval_to_value Env.empty obj
+    eval_to_value Namespace.empty obj
     = Ok obj)
 
   let%test _ = (
     let obj = (S_obj (StringT, String "hello world")) in
-    eval_to_value Env.empty obj
+    eval_to_value Namespace.empty obj
     = Ok obj)
 
   let%test _ = (
     expect_exn (Free_var ("", ""))
       (let obj = (S_obj (IdT, Id "atom")) in
-       eval_to_value Env.empty obj))
+       eval_to_value Namespace.empty obj))
 
   let%test _ = (
     eval_single_from_str "(if #f 1 0)"

@@ -16,6 +16,7 @@ let start () =
     begin match read_line () |> Parser.sexpr_of_string with
       | Ok ast ->
         Util.scheme_object_of_sexp ast
+        (* |> Expander.entry *)
         |> Eval.eval ~env:env
         |> begin function
           | Ok (ref_val, env') ->
@@ -28,8 +29,7 @@ let start () =
       | Error e ->
         Util.format_runtime_exn Format.std_formatter e;
     end; loop env
-  in begin
-    Format.pp_set_geometry ~max_indent:6 ~margin:100 Format.std_formatter;
-    Printf.printf "Welcome to GScheme v0.0.1";
-    loop Env.base
-  end
+  in
+  Format.pp_set_geometry ~max_indent:6 ~margin:100 Format.std_formatter;
+  Printf.printf "Welcome to GScheme v0.0.1";
+  loop Namespace.base

@@ -87,7 +87,7 @@ type syntax = { e : symbol
 
 let core_forms = [ "lambda"
                  ; "let-syntax"
-                 (* ; "#%app" *)
+                 ; "#%app"
                  ; "quote"
                  ; "quote-syntax"
                  ]

@@ -78,6 +78,19 @@ module Hidden = struct
         U.make_dotted ([x], y) |> ok
       | args -> error (Arity_mismatch (2, List.length args, args))
 
+  let list_ref : scheme_object list -> scheme_object maybe_exn
+    = function
+      | [ S_obj (ListT, List ls); S_obj (NumT, Num (Number.Int idx)) ] ->
+        let idx = (Int64.to_int idx) in
+        if idx < List.length ls then
+          List.nth ls idx |> ok
+        else error (Runtime_error (Printf.sprintf "index %d out of range" idx))
+      | [ ls; intgr ] when U.is_list ls ->
+        error (Type_mismatch ("int?", intgr))
+      | [ ls; _ ] ->
+        error (Type_mismatch ("list?", ls))
+      | args -> error (Arity_mismatch (2, List.length args, args))
+
   (* IO primitives (some of) *)
 
   let open_input_file
@@ -184,6 +197,7 @@ let base : scheme_object Box.t t
   |> ext "cons" (U.make_proc cons)
   |> ext "car" (U.make_proc car)
   |> ext "cdr" (U.make_proc cdr)
+  |> ext "list-ref" (U.make_proc list_ref)
 
   |> ext "+" (U.make_proc (num_binop Number.add))
   |> ext "-" (U.make_proc (num_binop Number.sub))

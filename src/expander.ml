@@ -313,6 +313,8 @@ let bind_core_forms_primitives
           { e = str; scopes = Scopes.singleton core_scope }
           (U.make_id str))
 
+let _ = bind_core_forms_primitives ()
+
 let namespace_syntax_introduce s =
   add_scope s core_scope
 
@@ -410,16 +412,19 @@ and expand_identifier s env =
         raise (Bad_syntax ("out of context: "))
       | v when v = variable ->
         s
-      | v when U.is_proc v ->
-        expand ~env:env (apply_transformer v s)
-      | _ (* else *) ->
-        begin
-          Printf.eprintf "What threw the error: '%s'\n" binding;
-          U.format_scheme_obj Format.err_formatter s;
-          Format.print_flush ();
-          Printf.eprintf "\n\n";
-          raise (Bad_syntax "illegal use of syntax:")
-        end
+      | v when U.is_func v ->
+        expand ~env:env (apply_transformer v
+                           (* NOTE expand_identifier takes a lone identifier,
+                            *      if this is a macro expansion
+                            *      the only syntax object that it should get
+                            *      is the bound identifier itself.
+                            ***)
+                           (U.make_list [ s ]))
+      | other ->
+        U.format_scheme_obj Format.err_formatter other;
+        Format.print_newline ();
+        Format.print_flush ();
+        raise (Bad_syntax "illegal use of syntax:")
     end
 
 and expand_id_application_form (* : TODO add type *)
@@ -431,60 +436,45 @@ and expand_id_application_form (* : TODO add type *)
           expand_lambda s env
         | Some (S_obj (IdT, Id "let-syntax")) ->
           expand_let_syntax s env
-
-        (* | Some (S_obj (IdT, Id "#%app")) ->
-         *   let S_obj (ListT, List (app_id :: es)) in
-         *   expand_app es env *)
-
+        | Some (S_obj (IdT, Id "#%app")) ->
+          let S_obj (ListT, List (app_id :: es)) = s in
+          expand_app (U.make_list es) env
         | Some (S_obj (IdT, Id "quote"))
         | Some (S_obj (IdT, Id "quote-syntax")) ->
           s
         | Some binding ->
           begin match env_lookup env binding with
-            | v when U.is_proc v ->
+            | v when U.is_func v ->
               expand ~env:env (apply_transformer v s)
             | v ->
               expand_app s env
           end
-        | None -> raise (Unexpected __LOC__)
+        | None ->
+          U.format_scheme_obj Format.err_formatter id;
+          Format.print_newline ();
+          Format.print_flush ();
+          raise (Unexpected __LOC__)
       end
     | _ -> raise (Unexpected __LOC__)
 
 and apply_transformer : scheme_object -> scheme_object -> scheme_object
-  = fun o s ->
-    (* FIXME the transformer should use the same types *)
-    (* print_endline "\nUnwrapping the transformer"; *)
-    let t = fun os ->
-      (U.unwrap_proc o |> get_ok) os
-      |> get_ok in
-    (****)
-    let intro_scope = Scope.fresh () in
-    (* U.format_scheme_obj Format.std_formatter s;
-     * Format.print_newline ();
-     * Format.print_flush ();
-     * print_endline "Unwrapping the arg list"; *)
-    let intro_s =
-      add_scope s intro_scope
-      |> (fun ol ->
-          U.unwrap_list ol
-          |> (function
-              | Ok l -> l
-              | Error _ -> [ ol ])) (* NOTE FIXME this is strange, if a symbol 'a is bound to a transformer
-                                     *            the transformer will get invoked, even if we are expanding
-                                     *            just 'a and not '(a). I am confused about this.
-                                     *            If the argument list was not a scheme_object list then we
-                                     *            put it in a list explicitly -- per the situation described above
-                                     ***)
+  = fun func_o s ->
+    let t = fun args ->
+      (* FIXME clearly boxing and then directly unboxing the result
+       * is not a great strategy. (this just needs better infratsructure.)
+       ***)
+      Eval.apply (Box.make func_o) (List.map Box.make args)
+      |> (function  | Ok result_obj -> Box.get result_obj
+                    (* FIXME this is definitely not unexpected
+                     * the macro expander needs to eventually use result.t
+                     * like the rest of the system.
+                     ***)
+                    | Error _ -> raise (Unexpected __LOC__))
     in
-    (* print_endline "transforming..."; *)
-    (* NOTE FIXME here we are applying the raw procedure to the
-     *            list of arguments. However, real macros are defined
-     *            using the 'lambda form, and are therefore not procedures
-     *            as described in the type system of this implementation.
-     *            This needs to then use the internal 'apply function which
-     *            will handle the case for both a primitive procedure and a
-     *            user-defined lambda.
-     ***)
+    let intro_scope = Scope.fresh () in
+    let intro_s = add_scope s intro_scope
+                  |> U.unwrap_list |> get_ok
+    in
     let transformed_s = t intro_s in
     (* print_endline "done\n"; *)
     flip_scope transformed_s intro_scope
@@ -523,13 +513,16 @@ and expand_let_syntax (* : TODO add type *)
                                     |> List.split
       in
       let sc = Scope.fresh () in
-      let ids = List.map (fun id ->
-          add_scope id sc) trans_ids in
       let bindings = List.map (function
           | S_obj (StxT, Stx id) ->
             add_local_binding id
           | _ -> raise (Unexpected __LOC__)) trans_ids in
-      let trans_vals = List.map eval_for_syntax_binding trans_rhss in
+      let trans_vals =
+        map_m eval_for_syntax_binding trans_rhss
+        >>| List.map (U.compose Box.get fst)
+        (* FIXME remove the unwrapping and handle errors correctly *)
+        |> get_ok
+      in
       let body_env = List.fold_left2 (fun env bnd vl ->
           env_extend env bnd vl) env bindings trans_vals in
       expand ~env:body_env (add_scope body sc)
@@ -546,9 +539,11 @@ and expand_app (* : TODO add type *)
 
 (*********************************************)
 
-and eval_for_syntax_binding rhs =
-  expand rhs ~env:empty_env
-  |> compile |> eval_compiled
+and eval_for_syntax_binding : scheme_object -> (scheme_object Box.t * scheme_object Box.t Namespace.t) maybe_exn
+  = fun rhs ->
+    expand rhs ~env:empty_env
+    |> compile
+    |> eval_compiled
 
 
 (*********************************************)
@@ -578,17 +573,37 @@ and compile : scheme_object -> scheme_object
     | (S_obj (StxT, Stx _) as id) ->
       begin match resolve id with
         | Some v -> v
-        | None -> raise (Unexpected __LOC__)
+        | None ->
+          print_endline "Failed with syntax: ";
+          U.format_scheme_obj Format.std_formatter id;
+          Format.print_newline ();
+          Format.print_flush ();
+          raise (Unexpected __LOC__)
       end
     | _ -> raise (Bad_syntax ("bad syntax after expansion: "))
 
-and eval_compiled s =
-  Eval.eval s
-  |> function
-  | Result.Ok (v, _) ->
-    Box.get v
-  | Result.Error _ ->
-    raise (Unexpected __LOC__)
+and eval_compiled : scheme_object -> (scheme_object Box.t * scheme_object Box.t Namespace.t) maybe_exn
+  = fun s ->
+    let ext = fun id v e ->
+      Namespace.extend e id (Box.make v) in
+    let env =
+      Namespace.base
+      |> ext "datum->syntax" (U.make_proc (function
+          | [ a ] -> datum_to_syntax a |> ok))
+      |> ext "syntax->datum" (U.make_proc (function
+          | [ a ] -> syntax_to_datum a |> ok))
+      |> ext "syntax-e" (U.make_proc (function
+          | [ S_obj (StxT, Stx id) ] -> ok (U.make_id id.e)
+          | [ arg ] ->
+            error (Type_mismatch ("syntax?", arg))
+          | args -> error (Arity_mismatch (1, List.length args, args))))
+    in
+    Eval.eval ~env:env s
+
+and entry s =
+  datum_to_syntax s
+  |> namespace_syntax_introduce
+  |> eval_for_syntax_binding
 
 let%test_module "expansion dispatch tests" = (module struct
 
@@ -695,69 +710,51 @@ let%test_module "expansion dispatch tests" = (module struct
                          raise (Unexpected __LOC__))))))
     = string_to_datum "(lambda (x) x)")
 
-  (* larger expansion tests *)
-  (* let%test _ = (let dtm = (string_to_datum "(lambda (x) x)") in
-   *               (syntax_to_datum
-   *                  (expand
-   *                     (namespace_syntax_introduce
-   *                        (datum_to_syntax dtm))))
-   *               = dtm)
-   *
-   * let%test _ = (
-   *   (syntax_to_datum
-   *      (expand
-   *         (namespace_syntax_introduce
-   *            (datum_to_syntax
-   *               (string_to_datum "(let-syntax ((one (lambda (stx)
-   *                                         (quote-syntax (quote 1)))))
-   *                       (one))")))))
-   *   = make_list [ make_id "quote"; make_int 1L ])
-   *
-   * let%test _ = (
-   *   expand (make_stx { e = "cons"; scopes = Scopes.singleton core_scope })
-   *   = make_stx { e = "cons"; scopes = Scopes.singleton core_scope })
-   *
-   * let%test _ = (
-   *   expand (make_stx { e = "a"; scopes = Scopes.of_list [sc1] }) ~env:(env_extend empty_env loc_a variable)
-   *   = make_stx { e = "a"; scopes = Scopes.of_list [sc1] })
-   * let%test _ = (
-   *   try let _ = expand (make_stx { e = "a"; scopes = Scopes.empty }) in
-   *     false
-   *   with Bad_syntax _ -> true)
-   * let%test _ = (
-   *   expand (make_list [
-   *       make_stx { e = "a"; scopes = Scopes.of_list [sc1] }
-   *     ; make_list [ make_stx { e = "quote"; scopes = Scopes.of_list [core_scope] }
-   *                 ; make_int 1L ]]) ~env:(env_extend empty_env loc_a variable)
-   *   = make_list [ make_stx { e = "a"; scopes = Scopes.of_list [sc1] }
-   *               ; make_list [ make_stx { e = "quote"; scopes = Scopes.of_list [core_scope] }
-   *                           ; make_int 1L ]]) *)
+  (* transformer tests *)
 
-  (* macro transformers *)
-  (* let%test _ = (
-   *   expand (namespace_syntax_introduce
-   *             (datum_to_syntax (string_to_datum "((quote 0) (quote 1))")))
-   *   = make_list [ make_list [ make_stx { e = "quote"; scopes = Scopes.of_list [core_scope] }
-   *                           ; make_int 0L ]
-   *               ; make_list [ make_stx { e = "quote"; scopes = Scopes.of_list [core_scope] }
-   *                           ; make_int 1L ]])
-   * let transformed_s =
-   *   apply_transformer (make_proc (fun [s] ->
-   *       match s with
-   *       | S_obj (ListT, List (_ :: v :: _)) ->
-   *         ok (make_list [v; make_stx { e = "x"; scopes = Scopes.empty }])))
-   *     (make_list [ make_stx { e = "m"; scopes = Scopes.empty }
-   *                ; make_stx { e = "f"; scopes = Scopes.of_list [sc1] } ])
-   * let%test _ = (
-   *   syntax_to_datum transformed_s
-   *   = make_list [ make_id "f"
-   *               ; make_id "x" ])
-   * let%test _ = (
-   *   let (S_obj (ListT, List (f :: _))) = transformed_s in
-   *   f = make_stx { e = "f"; scopes = Scopes.of_list [sc1] })
-   * let%test _ = (
-   *   let (S_obj (ListT, List (_ :: S_obj (StxT, Stx s) :: _))) = transformed_s in
-   *   Scopes.cardinal s.scopes = 1) *)
+  let transformed_s = (apply_transformer
+                         (make_proc (fun args ->
+                              (* FIXME I can't use list_ref defined in my primitives because it is hidden *)
+                              ok (make_list [ List.nth args 1; make_stx { e = "x"; scopes = Scopes.empty } ])))
+                         (make_list [ make_stx { e = "m"; scopes = Scopes.empty }
+                                    ; make_stx { e = "f"; scopes = Scopes.of_list [ sc1 ] }]))
+
+  let%test _ = (
+    (syntax_to_datum transformed_s)
+    = string_to_datum "(f x)")
+
+  let%test _ = (
+    (function
+      | S_obj (ListT, List (first :: _)) -> first
+      | _ -> raise (Unexpected "failed test")) transformed_s
+    = make_stx { e = "f"; scopes = Scopes.of_list [ sc1 ] })
+
+  let%test _ = (
+    (function
+      | S_obj (ListT, List (_ :: S_obj (StxT, Stx s) :: _)) ->
+        Scopes.cardinal s.scopes
+      | _ -> raise (Unexpected "failed test")) transformed_s
+    = 1)
+
+  let%test _ = (
+    ((eval_for_syntax_binding
+        (namespace_syntax_introduce
+           (datum_to_syntax
+              (string_to_datum "(car '(1 2))"))))
+     >>| (Box.get <.> fst))
+    = Ok (make_int 1L))
+
+  let%test _ = (
+    ((Eval.apply
+        (eval_for_syntax_binding
+           (namespace_syntax_introduce
+              (datum_to_syntax
+                 (string_to_datum "(lambda (x) (syntax-e x))")))
+         |> get_ok |> fst)
+        [ make_stx { e = "x"; scopes = Scopes.empty } |> Box.make ])
+     >>| Box.get)
+    = Ok (make_id "x"))
+
 end)
 
 [@@@ocaml.warning "+8"]

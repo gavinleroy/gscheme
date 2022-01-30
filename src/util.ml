@@ -17,6 +17,8 @@ let snd : type a b. (a * b) -> b
 let ( <.> ) : type a b c. (b -> c) -> (a -> b) -> (a -> c)
   = fun f g -> fun a -> f ( g a )
 
+let compose = (<.>)
+
 module List = struct
   include List
 
