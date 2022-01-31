@@ -23,8 +23,18 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
     Namespace.lookup e id >>= fun b ->
     kont (b, e)
 
+  (* different quoting types *)
   | S_obj (ListT, List [ S_obj (IdT, Id "quote"); v]) ->
     kontinue v
+
+  | S_obj (ListT, List [ S_obj (IdT, Id "quasiquote"); ls ]) ->
+    eval_unquoted
+      (U.make_list [ U.make_id "quote"; ls ])
+      ~env:e ~kont:kont
+
+  | S_obj (ListT, List ( S_obj (IdT, Id "unquote") :: _)) ->
+    (* maybe thid should be a bad form error *)
+    error (Runtime_error "unquote: not in quasiquote")
 
   | S_obj (ListT, List [ S_obj (IdT, Id "if"); cond; te; fe ]) ->
     eval cond ~env:e ~kont:(fun (box_v, _) ->
@@ -125,6 +135,28 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
 
   | v -> raise (Unexpected __LOC__)
 
+and eval_unquoted ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
+  let open U in
+  let kontinue v = kont (Box.make v, e) in
+  match s with
+  | S_obj (ListT, List [ S_obj (IdT, Id "unquote"); inner ]) ->
+    eval ~env:e ~kont:kont inner
+
+  | S_obj (ListT, List ls) ->
+    map_m (eval_unquoted ~env:e) ls >>| (fun ls' ->
+        List.map (Box.get <.> fst) ls'
+        |> make_list |> Box.make) >>| fun first ->
+    first, e
+
+  | S_obj (DottedT, Dotted (ls, last)) ->
+    map_m (eval_unquoted ~env:e) ls >>| (fun ls' ->
+        List.map (Box.get <.> fst) ls') >>| (fun first ->
+        eval_unquoted ~env:e last >>| fun (last, _) ->
+        ((make_dotted (first, Box.get last) |> Box.make)
+        , e)) |> join
+
+  | other -> kontinue other
+
 (** Evaluate the list of expressions passing the returned environment
     to the next eval *)
 and thread_eval ?env:(env = Namespace.base) ?kont:(k = final_kont) es =
@@ -132,6 +164,7 @@ and thread_eval ?env:(env = Namespace.base) ?kont:(k = final_kont) es =
   | [] -> raise (Unexpected "Calling 'thread_eval on an empty list")
   | [e] -> eval e ~env:env ~kont:k
   | e :: es ->
+    (* FIXME it shouldn't be ignoring the returned result '_' *)
     eval e ~env:env ~kont:(fun (_, env') ->
         thread_eval es ~env:env' ~kont:k)
 
@@ -151,8 +184,8 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
     let unboxed_args = List.map Box.get args in
     match Box.get f with
     | f when is_proc f ->
-      (f |> unwrap_proc |> get_ok) unboxed_args
-      >>= fun v -> ok (Box.make v)
+      (f |> unwrap_proc |> get_ok) unboxed_args >>= fun v ->
+      ok (Box.make v)
 
     | S_obj (LambT, Lamb { params; varargs; body; closure }) ->
 
@@ -208,21 +241,10 @@ let%test_module _ = (module struct
   open Util
   open Util.Test
 
-  let str_to_obj s =
-    (Parser.sexpr_of_string s
-     >>= (fun s ->
-         Ok (scheme_object_of_sexp s)))
-    |> get_ok
-
-  let eval_single_from_str line =
-    Parser.sexpr_of_string line
-    >>= (eval_to_value Namespace.base
-         <.> scheme_object_of_sexp)
-
-  let eval_many_from_str lines =
-    (List.map str_to_obj lines
-     |> thread_eval)
-    >>= (ok <.> fst)
+  let eval_from_str lines =
+    Parser.sexpr_of_string lines
+    >>| (fun sexps -> List.map scheme_object_of_sexp sexps)
+    >>= thread_eval >>| (Box.get <.> fst)
 
   let%test _ = (
     let obj = (S_obj (NumT, Num (Number.Int 1L))) in
@@ -240,68 +262,64 @@ let%test_module _ = (module struct
        eval_to_value Namespace.empty obj))
 
   let%test _ = (
-    eval_single_from_str "(if #f 1 0)"
+    eval_from_str "(if #f 1 0)"
     = Ok (make_int 0L))
 
   let%test _ = (
-    eval_single_from_str "(if '() 1 0)"
+    eval_from_str "(if '() 1 0)"
     = Ok (make_int 1L))
 
   let%test _ = (
-    eval_single_from_str "(if '(1 2 3) 1 0)"
+    eval_from_str "(if '(1 2 3) 1 0)"
     = Ok (make_int 1L))
 
   let%test _ = (
-    eval_single_from_str "(if (lambda x x) 1 0)"
+    eval_from_str "(if (lambda x x) 1 0)"
     = Ok (make_int 1L))
 
   let%test _ = (
-    eval_single_from_str "(map (lambda (x) (* 2 x)) '(1 2 3 4))"
+    eval_from_str "(map (lambda (x) (* 2 x)) '(1 2 3 4))"
     = Ok (make_list [make_int 2L; make_int 4L; make_int 6L; make_int 8L]))
 
   let%test _ = (
-    (eval_many_from_str [ "(define x 1)"
-                        ; "(define y 2)"
-                        ; "(define (foo z)
+    (eval_from_str "(define x 1)
+                    (define y 2)
+                    (define (foo z)
                             (define o x)
                             (set! x y)
                             (set! y z)
-                            o)"
-                        ; "(foo 3)" ]
-     >>| Box.get)
+                            o)
+                   (foo 3)")
     = Ok (make_int 1L))
 
   let%test _ = (
-    (eval_many_from_str [ "(define x 1)"
-                        ; "(define y 2)"
-                        ; "(define (foo z)
+    (eval_from_str "(define x 1)
+                        (define y 2)
+                        (define (foo z)
                             (define o x)
                             (set! x y)
                             (set! y z)
-                            o)"
-                        ; "(foo 3)"
-                        ; "x" ]
-     >>| Box.get)
+                            o)
+                        (foo 3)
+                        x")
     = Ok (make_int 2L))
 
   let%test _ = (
-    (eval_many_from_str [ "(define x 1)"
-                        ; "(define y 2)"
-                        ; "(define (foo z)
+    (eval_from_str "(define x 1)
+                        (define y 2)
+                        (define (foo z)
                             (define o x)
                             (set! x y)
                             (set! y z)
-                            o)"
-                        ; "(foo 3)"
-                        ; "y" ]
-     >>| Box.get)
+                            o)
+                        (foo 3)
+                        y")
     = Ok (make_int 3L))
 
   let%test _ = (
-    (eval_many_from_str [ "(define (f x) (+ x 42))"
-                        ; "(define (g p x) (p x))"
-                        ; "(g f 23)" ]
-     >>| Box.get)
+    (eval_from_str "(define (f x) (+ x 42))
+                        (define (g p x) (p x))
+                        (g f 23)")
     = Ok (make_int 65L))
 
 end)

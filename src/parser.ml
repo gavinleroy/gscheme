@@ -84,21 +84,60 @@ let parse_expr =
         >>| fun e ->
         (T.SexpList [
             SexpId "quote"; e])
+
+      and parse_quasiquoted =
+        (char '`' *> parse_expr)
+        >>| fun e ->
+        (T.SexpList [
+            SexpId "quasiquote"; e])
+
+      and parse_unquoted =
+        (char ',' *> parse_expr)
+        >>| fun e ->
+        (T.SexpList [
+            SexpId "unquote"; e])
       in
       choice [ lex parse_atom
              ; lex parse_ss_string
              ; lex parse_int
              ; lex parse_bool
              ; lex parse_quoted
+             ; lex parse_quasiquoted
+             ; lex parse_unquoted
              ; lex parse_dotted
              ; lex parse_list
              ])
 
 let parse_prog =
-  whitespace *> parse_expr
+  whitespace *> many1 (lex parse_expr)
 
-let sexpr_of_string : string -> T.sexp T.maybe_exn
+let sexpr_of_string : string -> T.sexp list T.maybe_exn
   = fun s ->
     match parse_string ~consume:Consume.All parse_prog s with
     | Ok parsed -> T.ok parsed
     | Error e -> T.error (T.Parser e)
+
+let%test_module "parser inline tests" = (module struct
+
+  open Types
+
+  let%test _ = (
+    sexpr_of_string "1"
+    = Ok [ SexpInt 1L ])
+
+  let%test _ = (
+    sexpr_of_string "  1   2
+
+    3"
+    = Ok [ SexpInt 1L
+         ; SexpInt 2L
+         ; SexpInt 3L ])
+
+  let%test _ = (
+    sexpr_of_string "'(1 2 3)"
+    = Ok [ SexpList [ SexpId "quote"
+                    ; SexpList [ SexpInt 1L
+                               ; SexpInt 2L
+                               ; SexpInt 3L ] ] ])
+
+end)

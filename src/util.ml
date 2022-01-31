@@ -204,8 +204,15 @@ and format_scheme_obj
         fprintf fmt "%Li" i
       | S_obj (StxT, Stx s) ->
         fprintf fmt "#<syntax %s>" s.e
+
+      (* different quoted forms *)
       | S_obj (ListT, List [S_obj (IdT, Id "quote"); rhs]) ->
         fprintf fmt "'%a" fso rhs
+      | S_obj (ListT, List [S_obj (IdT, Id "quasiquote"); rhs]) ->
+        fprintf fmt "`%a" fso rhs
+      | S_obj (ListT, List [S_obj (IdT, Id "unquote"); rhs]) ->
+        fprintf fmt ",%a" fso rhs
+
       | S_obj (ListT, List ls) ->
         fprintf fmt "(%a)"
           (pp_print_list ~pp_sep:pp_print_space
@@ -250,8 +257,12 @@ module Test = struct
   let string_to_datum s =
     Parser.sexpr_of_string s
     |> function
-    | Ok ast -> scheme_object_of_sexp ast
-    | Error s -> raise (T.Unexpected __LOC__)
+    | Ok ast ->
+      (* FIXME choose a different name of fix functionality *)
+      List.map scheme_object_of_sexp ast
+      |> List.last
+    | Error s ->
+      raise (T.Unexpected __LOC__)
 
   let expect_exn : type a. Types.runtime_exn -> a Types.maybe_exn -> bool
   (** Check that the expected type of runtime exception was returned.

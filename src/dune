@@ -13,6 +13,8 @@
 (library
  (name gscm)
  (libraries angstrom)
- (modules eval parser types util namespace box expander)
+ (modules eval parser types util namespace box
+          expander_old ;; omit new expander
+ )
  (inline_tests)
  (preprocess (pps ppx_inline_test ppx_let)))
