@@ -183,7 +183,12 @@ and make_stx s = T.S_obj (StxT, Stx s)
 
 and make_port p = T.S_obj (PortT, Port p)
 
-and format_scheme_obj
+(* unsafe operations / INTERNAL USE ONLY *)
+
+let unwrap_list_exn =
+  (Types.get_ok <.> unwrap_list)
+
+let rec format_scheme_obj
   = fun fmt s ->
     let open Format in
     let open Types in

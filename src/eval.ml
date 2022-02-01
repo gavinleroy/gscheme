@@ -11,6 +11,11 @@ open Types
 
 (* TODO restrict access with an interface *)
 
+type eval_sig = ?env:(scheme_object Box.t Namespace.t)
+  -> ?kont:((scheme_object Box.t * scheme_object Box.t Namespace.t) -> (scheme_object Box.t * scheme_object Box.t Namespace.t) maybe_exn)
+  -> scheme_object
+  -> (scheme_object Box.t * scheme_object Box.t Namespace.t) maybe_exn
+
 let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   let kontinue v = kont (Box.make v, e) in
   match s with
@@ -59,31 +64,25 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
         eval ls ~env:e ~kont:(fun (box_ls, _) ->
             match Box.get box_ls with
             | S_obj (ListT, List ls) ->
-              map_m (fun l ->
-                  eval l ~env:e ~kont:(fun (l, _) ->
-                      apply box_f [l] >>| fun v -> (v, e))) ls
-              >>= fun rs ->
-              List.map (fun (b, _) -> Box.get b) rs
-              |> U.make_list
-              |> (fun ls -> kontinue ls)
-            | _ -> raise (Unexpected __LOC__)))
-
+              begin
+                eval_many eval ls ~env:e ~kont:(fun (boxed_ls, e') ->
+                    let ls_vals = Box.get boxed_ls |> U.unwrap_list_exn in
+                    List.map (fun l -> apply box_f [ Box.make l ]) ls_vals
+                    |> (fun bs -> List.fold_right (fun mv acc ->
+                        acc >>= fun accs ->
+                        mv >>= fun mvu ->
+                        ok (Box.get mvu :: accs)) bs (Ok []))
+                    >>| U.make_list >>= (fun o ->
+                        kont (Box.make o, e')))
+              end
+            | obj -> error (Type_mismatch ("list?", obj))))
 
   | S_obj (ListT, List ( S_obj (IdT, Id "list") :: ls )) ->
-    let open U in
-    map_m (fun a ->
-        eval a ~env:e
-        >>= (ok <.> fst)) ls
-    >>| (Box.make <.> U.make_list <.> List.map Box.get)
-    >>= fun box_ls ->
-    kont (box_ls, e)
+    eval_many eval ~env:e ~kont:kont ls
 
   (* define / lambda forms *)
   | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym); rhs]) ->
     eval rhs ~env:e ~kont:(fun (box_v, _) ->
-        (* XXX this is obviously simplistic but it should be
-         * checked with the spec if this is correct (i.e. making a new ref)
-         **)
         let new_box = Box.make_from box_v in
         Namespace.extend e sym new_box |> fun e ->
         kont (Box.make U.make_void, e))
@@ -126,13 +125,12 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   | S_obj (ListT, List (func :: args)) ->
     let open U in
     eval func ~env:e ~kont:(fun (box_f, _) ->
-        map_m (fun a ->
-            eval a ~env:e
-            >>= (ok <.> fst)) args
-        >>= fun args ->
-        apply box_f args >>= fun box_v ->
-        kont (box_v, e))
-
+        eval_many eval args ~env:e ~kont:(fun (box_results, e') ->
+            let results = Box.get box_results
+                          |> U.unwrap_list_exn
+                          |> List.map Box.make in
+            apply box_f results >>= fun box_v ->
+            kont (box_v, e')))
   | v -> raise (Unexpected __LOC__)
 
 and eval_unquoted ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
@@ -143,30 +141,31 @@ and eval_unquoted ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
     eval ~env:e ~kont:kont inner
 
   | S_obj (ListT, List ls) ->
-    map_m (eval_unquoted ~env:e) ls >>| (fun ls' ->
-        List.map (Box.get <.> fst) ls'
-        |> make_list |> Box.make) >>| fun first ->
-    first, e
+    eval_many eval_unquoted ls ~env:e ~kont:kont
 
   | S_obj (DottedT, Dotted (ls, last)) ->
-    map_m (eval_unquoted ~env:e) ls >>| (fun ls' ->
-        List.map (Box.get <.> fst) ls') >>| (fun first ->
-        eval_unquoted ~env:e last >>| fun (last, _) ->
-        ((make_dotted (first, Box.get last) |> Box.make)
-        , e)) |> join
+    eval_many eval_unquoted ls ~env:e ~kont:(fun (boxed_ls, env') ->
+        eval_unquoted last ~env:env' ~kont:(fun (boxed_last, env') ->
+            let ls = Box.get boxed_ls |> U.unwrap_list_exn in
+            kontinue (make_dotted (ls, Box.get boxed_last))))
 
   | other -> kontinue other
 
-(** Evaluate the list of expressions passing the returned environment
-    to the next eval *)
-and thread_eval ?env:(env = Namespace.base) ?kont:(k = final_kont) es =
-  match es with
-  | [] -> raise (Unexpected "Calling 'thread_eval on an empty list")
-  | [e] -> eval e ~env:env ~kont:k
-  | e :: es ->
-    (* FIXME it shouldn't be ignoring the returned result '_' *)
-    eval e ~env:env ~kont:(fun (_, env') ->
-        thread_eval es ~env:env' ~kont:k)
+and eval_many ?env:(e = Namespace.base) ?kont:(k = final_kont) (evaluator : eval_sig) es =
+  (** Evaluate the list of expressions passing the new environment to intermediate evaluations.
+   *  'eval_many returns a boxed list object with the value of each expression in the input list.
+   ***)
+  let rec loop acc es env k =
+    match es with
+    | [] -> raise (Unexpected "Calling 'thread_eval on an empty list")
+    | [e] -> evaluator e ~env:env ~kont:(fun (box_res, env') ->
+        let results = ((Box.get box_res) :: acc)
+                      |> List.rev |> U.make_list |> Box.make in
+        k (results, env'))
+    | e :: es ->
+      evaluator e ~env:env ~kont:(fun (box_res, env') ->
+          loop ((Box.get box_res) :: acc) es env' k)
+  in loop [] es e k
 
 and eval_to_ref
   = fun env exp ->
@@ -177,6 +176,10 @@ and eval_to_value
   = fun env exp ->
     eval_to_ref env exp >>= fun box ->
     ok (Box.get box)
+
+(* FIXME 'apply and 'map both belong in the stdlib
+ * 'map also needs to get written (:
+ ***)
 
 and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box.t maybe_exn
   = fun f args ->
@@ -204,10 +207,9 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
         Namespace.extend_many closure params args
         |> bind_var_args varargs
         |> fun e ->
-        thread_eval ~env:e body
-        >>= (ok <.> fst)
+        eval_many eval ~env:e body
+        >>| (Box.make <.> List.last <.> U.unwrap_list_exn <.> Box.get <.> fst)
       end
-
     | s -> error (Type_mismatch ("procedure?", s))
 
 (* small helper functions *)
@@ -230,9 +232,6 @@ and make_fix () = make_func None
 (* the "id" function *)
 and final_kont = ok
 
-let eval_many (* rename out for external use *)
-  = thread_eval
-
 (* evaluation tests *)
 
 let%test_module _ = (module struct
@@ -244,7 +243,7 @@ let%test_module _ = (module struct
   let eval_from_str lines =
     Parser.sexpr_of_string lines
     >>| (fun sexps -> List.map scheme_object_of_sexp sexps)
-    >>= thread_eval >>| (Box.get <.> fst)
+    >>= eval_many eval >>| (List.last <.> unwrap_list_exn <.> Box.get <.> fst)
 
   let%test _ = (
     let obj = (S_obj (NumT, Num (Number.Int 1L))) in
