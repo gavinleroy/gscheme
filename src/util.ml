@@ -69,7 +69,7 @@ and unwrap_list : T.scheme_object -> T.scheme_object list T.maybe_exn
     | S_obj (ListT, List l) -> T.ok l
     | s -> error (Type_mismatch ("list?", s))
 
-and unwrap_proc : T.scheme_object -> (T.scheme_object list -> T.scheme_object T.maybe_exn) T.maybe_exn
+and unwrap_procedure : T.scheme_object -> (T.scheme_object list -> T.scheme_object T.maybe_exn) T.maybe_exn
   = fun s ->
     let open T in
     match s with
@@ -118,7 +118,7 @@ and is_number = function
   | T.S_obj (NumT, Num _) -> true
   | _ -> false
 
-and is_int = function
+and is_integer = function
   | T.S_obj (NumT, Num (T.Number.Int _)) -> true
   | _ -> false
 
@@ -140,7 +140,7 @@ and is_null = function
   | T.S_obj (ListT, List []) -> true
   | _ -> false
 
-and is_proc = function
+and is_procedure = function
   | T.S_obj (ProcT, Proc _) -> true
   | _ -> false
 
@@ -149,7 +149,7 @@ and is_lambda = function
   | _ -> false
 
 and is_func f =
-  is_proc f || is_lambda f
+  is_procedure f || is_lambda f
 
 and is_stx = function
   | T.S_obj (StxT, Stx _) -> true

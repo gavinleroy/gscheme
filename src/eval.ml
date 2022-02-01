@@ -15,7 +15,7 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   let kontinue v = kont (Box.make v, e) in
   match s with
   | s when U.is_bool s -> kontinue s
-  | s when U.is_int s -> kontinue s
+  | s when U.is_number s -> kontinue s
   | s when U.is_func s -> kontinue s
   | s when U.is_string s -> kontinue s
 
@@ -183,8 +183,8 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
     let open U in
     let unboxed_args = List.map Box.get args in
     match Box.get f with
-    | f when is_proc f ->
-      (f |> unwrap_proc |> get_ok) unboxed_args >>= fun v ->
+    | f when is_procedure f ->
+      (f |> unwrap_procedure |> get_ok) unboxed_args >>= fun v ->
       ok (Box.make v)
 
     | S_obj (LambT, Lamb { params; varargs; body; closure }) ->
@@ -321,5 +321,10 @@ let%test_module _ = (module struct
                         (define (g p x) (p x))
                         (g f 23)")
     = Ok (make_int 65L))
+
+  let%test _ = (
+    (eval_from_str "`(1 2 ,(+ 1 2))")
+    = Ok (make_list [ make_id "quote"
+                    ; make_list [make_int 1L; make_int 2L; make_int 3L ] ]))
 
 end)
