@@ -13,7 +13,8 @@ let repl_fmt = Format.std_formatter
 let display_result v =
   if not (Util.is_void v) then
     begin
-      Util.format_scheme_obj repl_fmt v;
+      Format.fprintf repl_fmt "@[%a@]"
+        Util.format_scheme_obj v;
       Format.print_flush ();
       print_newline ()
     end
@@ -52,6 +53,6 @@ let start () =
     end
 
   in
-  Format.pp_set_geometry ~max_indent:6 ~margin:30 repl_fmt;
+  (* Format.pp_set_geometry ~max_indent:6 ~margin:25 repl_fmt; *)
   Printf.printf "Welcome to GScheme v0.0.1\n";
   loop Namespace.base

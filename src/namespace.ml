@@ -22,6 +22,11 @@ module Wrappers = struct
         | [ arg1; arg2 ] -> func arg1 arg2
         | args -> error (Arity_mismatch (2, List.length args, args)))
 
+  let triple_arg_procedure
+    = fun func -> U.make_proc (function
+        | [ arg1; arg2; arg3 ] -> func arg1 arg2 arg3
+        | args -> error (Arity_mismatch (3, List.length args, args)))
+
   let min_2_arg_procedure : type a. (a -> a -> a) -> (scheme_object -> a maybe_exn) -> (a -> scheme_object) -> scheme_object
     = fun op cvt_from cvt_to ->
       U.make_proc (fun ls -> match ls with
@@ -107,6 +112,10 @@ let base : scheme_object Box.t t
   (* Add additional cadr cdar ... *)
   |> ext "cons" (double_arg_procedure Lib.cons)
   |> ext "list-ref" (double_arg_procedure Lib.list_ref)
+
+  |> ext "make-vector" (U.make_proc Lib.vector_make)
+  |> ext "vector-ref" (double_arg_procedure Lib.vector_ref)
+  |> ext "vector-set!" (triple_arg_procedure Lib.vector_set)
 
   |> ext "+" (min_2_arg_procedure Number.add U.unwrap_num U.make_num)
   |> ext "-" (min_2_arg_procedure Number.sub U.unwrap_num U.make_num)

@@ -16,10 +16,24 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   | s when U.is_number s -> kontinue s
   | s when U.is_func s -> kontinue s
   | s when U.is_string s -> kontinue s
+  | s when U.is_vector s -> kontinue s
 
   | S_obj (IdT, Id id) ->
     Namespace.lookup e id >>= fun b ->
     kont (b, e)
+
+  | S_obj (ListT, List ( S_obj (IdT, Id "list") :: ls )) ->
+    eval_many eval ~env:e ~kont:kont ls
+
+  | S_obj (ListT, List ( S_obj (IdT, Id "vector") :: ls )) ->
+    eval_many eval ~env:e ~kont:(fun (boxed_ls, e) ->
+        let v = Box.get boxed_ls
+                |> U.unwrap_list_exn
+                |> Vector.of_list
+                |> U.make_vector
+                |> Box.make
+        in
+        kont (v, e)) ls
 
   (* different quoting types *)
   | S_obj (ListT, List [ S_obj (IdT, Id "quote"); v]) ->
@@ -64,9 +78,6 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
                         kont (Box.make o, e')))
               end
             | obj -> error (Type_mismatch ("list?", obj))))
-
-  | S_obj (ListT, List ( S_obj (IdT, Id "list") :: ls )) ->
-    eval_many eval ~env:e ~kont:kont ls
 
   | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym); rhs]) ->
     (* reserve a heap location for sym *)
@@ -342,5 +353,23 @@ let%test_module _ = (module struct
                           (* n (fib (- n 1))))))
                     (fib 5) ")
     = Ok (make_int 120L))
+
+  let%test _ = (
+    (eval_from_str "(vector-ref (make-vector 1 0) 0)")
+    = Ok (make_int 0L))
+
+  let%test _ = (
+    (eval_from_str "(vector-ref (make-vector 10 \"hello\") 4)")
+    = Ok (make_string "hello"))
+
+  let%test _ = (
+    (eval_from_str "(vector-ref (make-vector 10 'hello) 4)")
+    = Ok (make_id "hello"))
+
+  let%test _ = (
+    (eval_from_str "(define vec #(1 2 'scheme #t (lambda (x) x)))
+                    (vector-set! vec 4 #f)
+                    (if (vector-ref vec 4) 'wrong 'correct)")
+    = Ok (make_id "correct"))
 
 end)

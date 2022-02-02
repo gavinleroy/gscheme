@@ -51,12 +51,20 @@ module Vector :sig
   type 'a t
   val get : 'a t -> int -> 'a
   val set : 'a t -> int -> 'a -> unit
+  val of_list : 'a list -> 'a t
+  val to_list : 'a t -> 'a list
+  val length : 'a t -> int
+  val make : int -> 'a -> 'a t
 end = struct
   type 'a t = 'a array
   let get vec pos =
     vec.(pos)
   let set vec pos upd =
     vec.(pos) <- upd
+  let of_list = Array.of_list
+  let to_list = Array.to_list
+  let length = Array.length
+  let make = Array.make
 end
 
 type id = Identifier.t
@@ -104,14 +112,6 @@ let core_primitives = [ "datum->syntax"
                       ; "cdr"
                       ; "map"
                       ]
-
-type sexp =
-  | SexpBool of bool
-  | SexpInt of int64
-  | SexpString of String.t
-  | SexpId of id
-  | SexpList of sexp list
-  | SexpDotted of sexp list * sexp
 
 type _ scheme_type =
   | VoidT : unit scheme_type

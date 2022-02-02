@@ -11,6 +11,15 @@ open Let_syntax
 (* open Types *)
 module T = Types
 
+type sexp =
+  | SexpBool of bool
+  | SexpInt of int64
+  | SexpString of String.t
+  | SexpId of Types.id
+  | SexpHash of sexp
+  | SexpList of sexp list
+  | SexpDotted of sexp list * sexp
+
 let is_whitespace = function
   | '\x20' | '\x0a' | '\x0d' | '\x09' -> true
   | _ -> false
@@ -35,7 +44,7 @@ let lex p =
 
 let parse_int = (* TODO handle signed numbers *)
   let%map sn = take_while1 is_digit in
-  T.SexpInt (Int64.of_string sn)
+  SexpInt (Int64.of_string sn)
 
 let digit =
   satisfy is_digit
@@ -49,15 +58,15 @@ let letter =
 let parse_bool =
   let%bind s = char '#' *> take 1 in
   match s with
-  | "t" -> T.SexpBool true |> return
-  | "f" -> T.SexpBool false |> return
+  | "t" -> SexpBool true |> return
+  | "f" -> SexpBool false |> return
   | _ -> fail "boolean values must be #t/#f"
 
 let parse_ss_string =
   let%map str = char '"' *>
                 take_while (((<>)'"'))
                 <* char '"' in
-  T.SexpString str
+  SexpString str
 
 let parse_atom =
   let%bind stem = (letter <|> symbol) in
@@ -66,41 +75,48 @@ let parse_atom =
              |> List.to_seq
              |> String.of_seq
   in
-  T.SexpId full
+  SexpId full
 
 let parse_expr =
   fix (fun parse_expr ->
       let parse_list =
         lex (char '(') *> sep_by whitespace parse_expr <* lex (char ')')
-        >>| fun ls -> T.SexpList ls
+        >>| fun ls -> SexpList ls
 
       and parse_dotted =
         let%bind front = lex (char '(') *> sep_by whitespace parse_expr in
         let%map last = lex (char '.') *> lex parse_expr <* char ')' in
-        T.SexpDotted (front, last)
+        SexpDotted (front, last)
 
       and parse_quoted =
         (char '\'' *> parse_expr)
         >>| fun e ->
-        (T.SexpList [
+        (SexpList [
             SexpId "quote"; e])
 
       and parse_quasiquoted =
         (char '`' *> parse_expr)
         >>| fun e ->
-        (T.SexpList [
+        (SexpList [
             SexpId "quasiquote"; e])
 
       and parse_unquoted =
         (char ',' *> parse_expr)
         >>| fun e ->
-        (T.SexpList [
+        (SexpList [
             SexpId "unquote"; e])
+
+      and parse_hashed =
+        (char '#' *> parse_expr)
+        >>| fun e ->
+        (SexpHash e)
+
       in
       choice [ lex parse_atom
              ; lex parse_ss_string
              ; lex parse_int
              ; lex parse_bool
+             ; lex parse_hashed
              ; lex parse_quoted
              ; lex parse_quasiquoted
              ; lex parse_unquoted
@@ -111,7 +127,7 @@ let parse_expr =
 let parse_prog =
   whitespace *> many1 (lex parse_expr)
 
-let rec scheme_object_of_sexp : T.sexp -> T.scheme_object
+let rec scheme_object_of_sexp : sexp -> T.scheme_object
   = function
     | SexpBool b -> Types.S_obj (BoolT, Bool b)
     | SexpInt i -> Types.S_obj (NumT, Num (Types.Number.Int i))
@@ -133,8 +149,14 @@ let rec scheme_object_of_sexp : T.sexp -> T.scheme_object
           Types.S_obj (DottedT, Dotted
                          (hd, tl))
       end
+    | SexpHash inner ->
+      begin match scheme_object_of_sexp inner with
+        | Types.S_obj (ListT, List values) ->
+          S_obj (VecT, Vec (T.Vector.of_list values))
+        | _ -> raise (T.Unexpected ("Hashed value not supported : " ^ __LOC__))
+      end
 
-let sexpr_of_string : string -> T.sexp list T.maybe_exn
+let sexpr_of_string : string -> sexp list T.maybe_exn
   = fun s ->
     match parse_string ~consume:Consume.All parse_prog s with
     | Ok parsed -> T.ok parsed

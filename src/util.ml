@@ -155,6 +155,8 @@ and make_int i = T.S_obj (NumT, Num (T.Number.Int i))
 
 and make_list l = T.S_obj (ListT, List l)
 
+and make_vector v = T.S_obj (VecT, Vec v)
+
 and make_dotted p = T.S_obj (DottedT, Dotted p)
 
 and make_lambda f = T.S_obj (LambT, Lamb f)
@@ -191,7 +193,6 @@ let rec format_scheme_obj
         fprintf fmt "%Li" i
       | S_obj (StxT, Stx s) ->
         fprintf fmt "#<syntax %s>" s.e
-
       (* different quoted forms *)
       | S_obj (ListT, List [S_obj (IdT, Id "quote"); rhs]) ->
         fprintf fmt "'%a" fso rhs
@@ -199,11 +200,14 @@ let rec format_scheme_obj
         fprintf fmt "`%a" fso rhs
       | S_obj (ListT, List [S_obj (IdT, Id "unquote"); rhs]) ->
         fprintf fmt ",%a" fso rhs
-
       | S_obj (ListT, List ls) ->
         fprintf fmt "(%a)"
-          (pp_print_list ~pp_sep:pp_print_space
-             fso) ls
+          (pp_print_list ~pp_sep:pp_print_space fso)
+          ls
+      | S_obj (VecT, Vec vector) ->
+        fprintf fmt "#(%a)"
+          (pp_print_list ~pp_sep:pp_print_space fso)
+          (Vector.to_list vector)
       | S_obj (DottedT, Dotted (ls, tl)) ->
         fprintf fmt "(%a . %a)"
           (pp_print_list ~pp_sep:pp_print_space
@@ -222,35 +226,35 @@ and format_runtime_exn
     let open Types in
     let ind fmt s = match s with
       | Runtime_error str ->
-        fprintf fmt "@[<2>%s:@ %s;@]@[<2>%s@]"
+        fprintf fmt "@[<v 2>%s: %s;@,<v 2>%s@]"
           "XXX" "runtime error" str
 
       | Arity_mismatch (expected, given, objs) ->
-        fprintf fmt "@[<2>%s:@ %s;@]@[<2>expected: %d@]@[<2>given: %d@]@[<2>args: %a@]"
+        fprintf fmt "@[<v 2>%s: %s;@,expected: %d@,given: %d@,args: %a@]"
           "XXX" "arity mismatch"
           expected given
           (pp_print_list ~pp_sep:pp_print_space format_scheme_obj) objs
 
       | Type_mismatch (contract, obj) ->
-        fprintf fmt "@[<2>%s:@ %s;@]@[<2>predicate: %s@]@[<2>unsatisfied by: %a@]"
+        fprintf fmt "@[<v 2>%s: %s;@,predicate: %s@,unsatisfied by: %a@]"
           "XXX" "contract violation"
           contract
           format_scheme_obj obj
 
       | Free_var var ->
-        fprintf fmt "@[<2>%s:@ %s;@]@[<2>%s@]"
+        fprintf fmt "@[<v 2>%s: %s;@,%s@]"
           var "undefined"
           "cannot reference an identifier before its definition"
 
       | Bad_form (msg, obj) ->
-        fprintf fmt "@[<2>%s:@ %s;@]@[<2>%s;@]@[found at: %a@]"
+        fprintf fmt "@[<v 2>%s:@ %s;@,%s;@,found at: %a@]"
           "XXX" "bad form" msg
           format_scheme_obj obj
 
       | Parser str ->
-        fprintf fmt "@[<2>%s:@ %s;@]@[<2>%s@]"
+        fprintf fmt "@[<v 2>%s: %s;@]@,@[<v 2>%s@]"
           "XXX" "syntax error" str
-    in fprintf fmt "@[<2>%a@]" ind exc
+    in fprintf fmt "@[<v 2>%a@]" ind exc
 
 module Test = struct
 

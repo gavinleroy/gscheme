@@ -51,8 +51,44 @@ let list_ref : scheme_object -> scheme_object -> scheme_object maybe_exn
         List.nth ls idx |> ok
       else error (Runtime_error (Printf.sprintf "index %d out of range" idx))
     | ls, intgr when is_list ls ->
-      error (Type_mismatch ("int?", intgr))
+      error (Type_mismatch ("integer?", intgr))
     | ls, _ -> error (Type_mismatch ("list?", ls))
+
+let vector_ref : scheme_object -> scheme_object -> scheme_object maybe_exn
+  = fun a1 a2 -> match a1, a2 with
+    | S_obj (VecT, Vec v), S_obj (NumT, Num (Number.Int idx)) ->
+      let idx = (Int64.to_int idx) in
+      if idx < Vector.length v then
+        Vector.get v idx |> ok
+      else error (Runtime_error (Printf.sprintf "index %d out of range" idx))
+    | v, intgr when is_vector v ->
+      error (Type_mismatch ("integer?", intgr))
+    | ls, _ -> error (Type_mismatch ("vector?", ls))
+
+let vector_set : scheme_object -> scheme_object -> scheme_object -> scheme_object maybe_exn
+  = fun a1 a2 obj -> match a1, a2 with
+    | S_obj (VecT, Vec v), S_obj (NumT, Num (Number.Int idx))  ->
+      let idx = (Int64.to_int idx) in
+      if idx < Vector.length v then
+        begin
+          Vector.set v idx obj;
+          ok (make_void)
+        end
+      else error (Runtime_error (Printf.sprintf "index %d out of range" idx))
+    | v, intgr when is_vector v ->
+      error (Type_mismatch ("integer?", intgr))
+    | ls, _ -> error (Type_mismatch ("vector?", ls))
+
+let vector_make
+  = fun ls -> match ls with
+    | [ S_obj (NumT, Num (Number.Int size)); fill ] ->
+      let size = Int64.to_int size in
+      ok (make_vector (Vector.make size fill))
+    | [ S_obj (NumT, Num (Number.Int size)) ] ->
+      let size = Int64.to_int size in
+      ok (make_vector (Vector.make size make_void))
+    | [ arg ] -> error (Type_mismatch ("integer?", arg))
+    | ls -> error (Arity_mismatch (1, List.length ls, ls))
 
 (* IO primitives *)
 
