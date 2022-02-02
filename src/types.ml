@@ -38,6 +38,9 @@ module Number = struct
 
   let sub lhs rhs = match lhs, rhs with
     | Int l, Int r -> Int (Int64.sub l r)
+
+  let equal lhs rhs = match lhs, rhs with
+    | Int l, Int r -> Int64.equal l r
 end
 
 module Identifier = struct
@@ -159,26 +162,14 @@ and runtime_exn =
   | Arity_mismatch of (int * int * scheme_object list)
   | Type_mismatch of (string * scheme_object)
   | Free_var of (string * string)
+  | Bad_form of (string * scheme_object)
   | Parser of string
-  (* | Bad_form (string * scheme_object) *)
 
 and 'a maybe_exn = ('a, runtime_exn) Result.t
 
 and port =
   | WritePort of out_channel
   | ReadPort of in_channel
-
-(* TODO all functions should be put in utils or a separate library *)
-
-let to_string = function
-  | Runtime_error _
-  | Arity_mismatch _
-  | Type_mismatch _
-  | Free_var _
-  | Parser _ -> "TODO improve exn show"
-
-let trap_exn : type a. a maybe_exn -> (a, string) Result.t
-  = fun s -> Result.map_error to_string s
 
 (* TODO other control flow exn primitives *)
 

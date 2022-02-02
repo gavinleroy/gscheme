@@ -41,21 +41,9 @@ module Wrappers = struct
            cnv rhs >>= fun r ->
            op l r |> U.make_bool |> ok)
 
-  (* let num_binop : (Number.t -> Number.t -> Number.t) -> scheme_object list -> scheme_object maybe_exn
-   *   = fun op ls ->
-   *     match ls with
-   *     (\* TODO require at least two arguments for numeric operations, however,
-   *      *      some could be done with 1. For example, (+ 1) => 1
-   *      **\)
-   *     | (_ :: _ :: _) ->
-   *       map_m U.unwrap_num ls
-   *       >>= fun ls ->
-   *       U.List.foldl1 op ls
-   *       |> U.make_num |> ok
-   *     | _ -> error (Arity_mismatch (2, List.length ls, ls)) *)
-
-  let num_bool_binop = bool_binop U.unwrap_int
+  let num_bool_binop = bool_binop U.unwrap_num
   let bool_bool_binop = bool_binop U.unwrap_bool
+
   (* let string_bool_binop = bool_binop U.unwrap_string *)
 
 end
@@ -123,6 +111,7 @@ let base : scheme_object Box.t t
   |> ext "+" (min_2_arg_procedure Number.add U.unwrap_num U.make_num)
   |> ext "-" (min_2_arg_procedure Number.sub U.unwrap_num U.make_num)
   |> ext "*" (min_2_arg_procedure Number.mul U.unwrap_num U.make_num)
+  |> ext "=" (num_bool_binop Number.equal)
 
 let%test_module _ = (module struct
 

@@ -220,20 +220,29 @@ and format_runtime_exn
       | Runtime_error str ->
         fprintf fmt "@[<2>%s:@ %s;@ @[<2>%s@]@]"
           "XXX" "runtime error" str
+
       | Arity_mismatch (expected, given, objs) ->
         fprintf fmt "@[<2>%s:@ %s;@ @[<2>expected: %d@;given: %d@;args: %a@]@]"
           "XXX" "arity mismatch"
           expected given
           (pp_print_list ~pp_sep:pp_print_space format_scheme_obj) objs
+
       | Type_mismatch (contract, obj) ->
         fprintf fmt "@[<2>%s:@ %s;@ @[<2>predicate: %s@;unsatisfied by: %a@]@]"
           "XXX" "contract violation"
           contract
           format_scheme_obj obj
+
       | Free_var (s1, s2) ->
         fprintf fmt "@[<2>%s:@ %s;@;@[%s@;%s@]@]"
           "XXX" "free variable"
           s1 s2
+
+      | Bad_form (msg, obj) ->
+        fprintf fmt "@[<2>%s:@ %s;@ @[<2>%s;@ found at: %a@]@]"
+          "XXX" "bad form" msg
+          format_scheme_obj obj
+
       | Parser str ->
         fprintf fmt "@[<2>%s:@ %s;@ @[<hov 2>%s@]@]"
           "XXX" "syntax error" str
