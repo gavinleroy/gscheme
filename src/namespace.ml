@@ -56,7 +56,7 @@ let lookup : type a. a t -> id -> a maybe_exn
   = fun env id ->
     match M.find_opt id env with
     | Some r -> ok r
-    | None -> error (Free_var ("", id))
+    | None -> error (Free_var id)
 
 let extend env id v =
   M.add id v env
@@ -133,6 +133,6 @@ let%test_module _ = (module struct
                 |> (fun env -> lookup env "x")
                    = Ok 0)
 
-  let%test _ = (expect_exn (Free_var ("", ""))
+  let%test _ = (expect_exn (Free_var "")
                   (lookup empty "y"))
 end)

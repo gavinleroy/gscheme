@@ -210,43 +210,47 @@ let rec format_scheme_obj
              fso) ls
           fso tl
       | _ -> raise (T.Unexpected "fmt_scheme_object unexpected object")
-    in fprintf fmt "@[%a@]" fso s
+    in fprintf fmt "%a" fso s
 
+(* I'm not very familiar with the Format module but I believe the <2>
+ * within the nested boxes are unnecessary for indentations.
+ ***)
+(* FIXME the XXX within the messages should represent scope e.g. a function name *)
 and format_runtime_exn
   = fun fmt exc ->
     let open Format in
     let open Types in
     let ind fmt s = match s with
       | Runtime_error str ->
-        fprintf fmt "@[<2>%s:@ %s;@ @[<2>%s@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@]@[<2>%s@]"
           "XXX" "runtime error" str
 
       | Arity_mismatch (expected, given, objs) ->
-        fprintf fmt "@[<2>%s:@ %s;@ @[<2>expected: %d@;given: %d@;args: %a@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@]@[<2>expected: %d@]@[<2>given: %d@]@[<2>args: %a@]"
           "XXX" "arity mismatch"
           expected given
           (pp_print_list ~pp_sep:pp_print_space format_scheme_obj) objs
 
       | Type_mismatch (contract, obj) ->
-        fprintf fmt "@[<2>%s:@ %s;@ @[<2>predicate: %s@;unsatisfied by: %a@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@]@[<2>predicate: %s@]@[<2>unsatisfied by: %a@]"
           "XXX" "contract violation"
           contract
           format_scheme_obj obj
 
-      | Free_var (s1, s2) ->
-        fprintf fmt "@[<2>%s:@ %s;@;@[%s@;%s@]@]"
-          "XXX" "free variable"
-          s1 s2
+      | Free_var var ->
+        fprintf fmt "@[<2>%s:@ %s;@]@[<2>%s@]"
+          var "undefined"
+          "cannot reference an identifier before its definition"
 
       | Bad_form (msg, obj) ->
-        fprintf fmt "@[<2>%s:@ %s;@ @[<2>%s;@ found at: %a@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@]@[<2>%s;@]@[found at: %a@]"
           "XXX" "bad form" msg
           format_scheme_obj obj
 
       | Parser str ->
-        fprintf fmt "@[<2>%s:@ %s;@ @[<hov 2>%s@]@]"
+        fprintf fmt "@[<2>%s:@ %s;@]@[<2>%s@]"
           "XXX" "syntax error" str
-    in fprintf fmt "@[%a@]" ind exc
+    in fprintf fmt "@[<2>%a@]" ind exc
 
 module Test = struct
 

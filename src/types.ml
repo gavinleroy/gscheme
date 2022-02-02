@@ -161,7 +161,7 @@ and runtime_exn =
   | Runtime_error of string
   | Arity_mismatch of (int * int * scheme_object list)
   | Type_mismatch of (string * scheme_object)
-  | Free_var of (string * string)
+  | Free_var of string
   | Bad_form of (string * scheme_object)
   | Parser of string
 

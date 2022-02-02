@@ -8,16 +8,18 @@
 
 open Gscm
 
+let repl_fmt = Format.std_formatter
+
 let display_result v =
   if not (Util.is_void v) then
     begin
-      Util.format_scheme_obj Format.std_formatter v;
+      Util.format_scheme_obj repl_fmt v;
       Format.print_flush ();
       print_newline ()
     end
 
 let display_exn e =
-  Util.format_runtime_exn Format.std_formatter e;
+  Util.format_runtime_exn repl_fmt e;
   Format.print_flush ();
   print_newline ()
 
@@ -50,6 +52,6 @@ let start () =
     end
 
   in
-  Format.pp_set_geometry ~max_indent:6 ~margin:100 Format.std_formatter;
+  Format.pp_set_geometry ~max_indent:6 ~margin:30 repl_fmt;
   Printf.printf "Welcome to GScheme v0.0.1\n";
   loop Namespace.base

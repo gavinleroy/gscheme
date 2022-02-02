@@ -255,7 +255,7 @@ let%test_module _ = (module struct
     = Ok obj)
 
   let%test _ = (
-    expect_exn (Free_var ("", ""))
+    expect_exn (Free_var "")
       (let obj = (S_obj (IdT, Id "atom")) in
        eval_to_value Namespace.empty obj))
 
