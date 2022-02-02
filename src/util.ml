@@ -76,24 +76,6 @@ and unwrap_procedure : T.scheme_object -> (T.scheme_object list -> T.scheme_obje
     | S_obj (ProcT, Proc f) -> ok f
     | _ -> error (Type_mismatch ("procedure?", s))
 
-and scheme_object_of_sexp : T.sexp -> T.scheme_object
-  = function
-    | SexpBool b -> make_bool b
-    | SexpInt i -> make_int i
-    | SexpId i -> make_id i
-    | SexpString s -> make_string s
-    | SexpList l ->
-      make_list (List.map scheme_object_of_sexp l)
-    | SexpDotted (hd, tl) ->
-      let hd = List.map scheme_object_of_sexp hd in
-      begin match scheme_object_of_sexp tl with
-        | S_obj (DottedT, Dotted (hd', tl)) ->
-          make_dotted (hd @ hd', tl)
-        | S_obj (ListT, List ls) ->
-          make_list (hd @ ls)
-        | tl -> make_dotted (hd, tl)
-      end
-
 and is_void = function
   | T.S_obj (VoidT, Void) -> true
   | _ -> false
@@ -260,12 +242,11 @@ and format_runtime_exn
 module Test = struct
 
   let string_to_datum s =
-    Parser.sexpr_of_string s
+    Parser.scheme_object_of_string s
     |> function
     | Ok ast ->
       (* FIXME choose a different name of fix functionality *)
-      List.map scheme_object_of_sexp ast
-      |> List.last
+      List.last ast
     | Error s ->
       raise (T.Unexpected __LOC__)
 

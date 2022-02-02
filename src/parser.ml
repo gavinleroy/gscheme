@@ -111,11 +111,38 @@ let parse_expr =
 let parse_prog =
   whitespace *> many1 (lex parse_expr)
 
+let rec scheme_object_of_sexp : T.sexp -> T.scheme_object
+  = function
+    | SexpBool b -> Types.S_obj (BoolT, Bool b)
+    | SexpInt i -> Types.S_obj (NumT, Num (Types.Number.Int i))
+    | SexpId i -> Types.S_obj (IdT, Id i)
+    | SexpString s -> Types.S_obj (StringT, String s)
+    | SexpList l ->
+      Types.S_obj (ListT, List
+                     (List.map scheme_object_of_sexp l))
+    | SexpDotted (hd, tl) ->
+      let hd = List.map scheme_object_of_sexp hd in
+      begin match scheme_object_of_sexp tl with
+        | Types.S_obj (DottedT, Dotted (hd', tl)) ->
+          Types.S_obj (DottedT, Dotted
+                         (hd @ hd', tl))
+        | Types.S_obj (ListT, List ls) ->
+          Types.S_obj (ListT, List
+                         (hd @ ls))
+        | tl ->
+          Types.S_obj (DottedT, Dotted
+                         (hd, tl))
+      end
+
 let sexpr_of_string : string -> T.sexp list T.maybe_exn
   = fun s ->
     match parse_string ~consume:Consume.All parse_prog s with
     | Ok parsed -> T.ok parsed
     | Error e -> T.error (T.Parser e)
+
+let scheme_object_of_string : string -> T.scheme_object list T.maybe_exn
+  = fun s -> let open Types in
+    sexpr_of_string s >>| List.map scheme_object_of_sexp
 
 let%test_module "parser inline tests" = (module struct
 

@@ -241,8 +241,7 @@ let%test_module _ = (module struct
   open Util.Test
 
   let eval_from_str lines =
-    Parser.sexpr_of_string lines
-    >>| (fun sexps -> List.map scheme_object_of_sexp sexps)
+    Parser.scheme_object_of_string lines
     >>= eval_many eval >>| (List.last <.> unwrap_list_exn <.> Box.get <.> fst)
 
   let%test _ = (
