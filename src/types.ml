@@ -1,6 +1,6 @@
 (*******************************************)
 (*                                         *)
-(* Gavin Gray 01.2022                      *)
+(* Gavin Gray 02.2022                      *)
 (*                                         *)
 (* GScheme                                 *)
 (*                                         *)
@@ -91,11 +91,6 @@ end
 
 module Scopes = Set.Make(Scope)
 
-(* type stx = symbol * Scopes.t *)
-type syntax = { e : symbol
-              ; scopes : Scopes.t
-              }
-
 let core_forms = [ "lambda"
                  ; "let-syntax"
                  ; "#%app"
@@ -120,7 +115,7 @@ type _ scheme_type =
   | CharT : Char.t scheme_type
   | StringT : String.t scheme_type
   | IdT : id scheme_type
-  | StxT : syntax scheme_type
+  | StxT : syntax_record scheme_type
   | ListT : scheme_object list scheme_type
   | VecT : scheme_object Vector.t scheme_type
   | DottedT : (scheme_object list * scheme_object) scheme_type
@@ -135,7 +130,7 @@ and _ value =
   | Char : Char.t -> Char.t value
   | String : String.t -> String.t value
   | Id : id -> id value
-  | Stx : syntax -> syntax value
+  | Stx : syntax_record -> syntax_record value
   | List : scheme_object list -> scheme_object list value
   | Vec : scheme_object Vector.t -> scheme_object Vector.t value
   | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) value
@@ -148,6 +143,10 @@ and proc_sig = (scheme_object list -> scheme_object maybe_exn)
 and (_, _) eq = Eq : ('a, 'a) eq
 
 and scheme_object = S_obj : 'a scheme_type * 'a value -> scheme_object
+
+and syntax_record = { e : scheme_object
+                    ; scopes : Scopes.t
+                    }
 
 and lambda_record = { params : id list
                     ; varargs : id option
@@ -172,6 +171,10 @@ and port =
   | ReadPort of in_channel
 
 (* TODO other control flow exn primitives *)
+
+(* module Syntax = struct
+ *   type t = syntax_record
+ * end *)
 
 let ( >>= ) = Result.bind
 

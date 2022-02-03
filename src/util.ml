@@ -133,7 +133,7 @@ and is_lambda = function
 and is_func f =
   is_procedure f || is_lambda f
 
-and is_stx = function
+and is_syntax = function
   | T.S_obj (StxT, Stx _) -> true
   | _ -> false
 
@@ -163,7 +163,7 @@ and make_lambda f = T.S_obj (LambT, Lamb f)
 
 and make_proc f = T.S_obj (ProcT, Proc f)
 
-and make_stx s = T.S_obj (StxT, Stx s)
+and make_syntax s = T.S_obj (StxT, Stx s)
 
 and make_port p = T.S_obj (PortT, Port p)
 
@@ -171,6 +171,12 @@ and make_port p = T.S_obj (PortT, Port p)
 
 let unwrap_list_exn =
   (Types.get_ok <.> unwrap_list)
+
+let list_map : (T.scheme_object -> T.scheme_object) -> T.scheme_object -> T.scheme_object T.maybe_exn
+  = fun f s -> match s with
+    | T.S_obj (T.ListT, T.List ls) ->
+      make_list (List.map f ls) |> T.ok
+    | obj -> T.error (T.Type_mismatch ("list?", obj))
 
 let rec format_scheme_obj
   = fun fmt s ->
@@ -192,7 +198,8 @@ let rec format_scheme_obj
       | S_obj (NumT, Num (T.Number.Int i)) ->
         fprintf fmt "%Li" i
       | S_obj (StxT, Stx s) ->
-        fprintf fmt "#<syntax %s>" s.e
+        fprintf fmt "#<syntax %a>"
+          fso s.e
       (* different quoted forms *)
       | S_obj (ListT, List [S_obj (IdT, Id "quote"); rhs]) ->
         fprintf fmt "'%a" fso rhs
