@@ -59,7 +59,7 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   | S_obj (ListT, List [ S_obj (IdT, Id "set!"); S_obj (IdT, Id sym); rhs ]) ->
     eval rhs ~env:e ~kont:(fun (ref_rhs, _) ->
         set_bang e sym ref_rhs >>= fun _ ->
-        kontinue U.make_void)
+        kontinue void)
 
   | S_obj (ListT, List [ S_obj (IdT, Id "map"); func; ls ]) ->
     eval func ~env:e ~kont:(fun (box_f, _) ->
@@ -81,10 +81,10 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
 
   | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym); rhs]) ->
     (* reserve a heap location for sym *)
-    let env = Namespace.extend e sym (Box.make U.make_void) in
+    let env = Namespace.extend e sym (Box.make void) in
     eval rhs ~env:env ~kont:(fun (box_v, _) ->
         set_bang env sym box_v |> get_ok;
-        kont (Box.make U.make_void, env))
+        kont (Box.make void, env))
 
   (* define / lambda forms
    * NOTE that the 'define forms of the structure (define (foo arg1 arg2 ...) ...)
@@ -94,20 +94,20 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   | S_obj (ListT, List (S_obj (IdT, Id "define")
                         :: S_obj (ListT, List (S_obj (IdT, Id fname) :: params))
                         :: body)) ->
-    let env = Namespace.extend e fname (Box.make U.make_void) in
+    let env = Namespace.extend e fname (Box.make void) in
     map_m U.unwrap_id params >>= fun params ->
     set_bang env fname (make_fix () env params body) |> get_ok;
-    kont (Box.make U.make_void, env)
+    kont (Box.make void, env)
 
   | S_obj (ListT, List (S_obj (IdT, Id "define")
                         :: S_obj (DottedT, Dotted
                                     (S_obj (IdT, Id fname) :: params, varargs))
                         :: body)) ->
-    let env = Namespace.extend e fname (Box.make U.make_void) in
+    let env = Namespace.extend e fname (Box.make void) in
     map_m U.unwrap_id params >>= fun params ->
     U.unwrap_id varargs >>= fun va_id ->
     set_bang env fname (make_va va_id e params body) |> get_ok;
-    kont (Box.make U.make_void, e)
+    kont (Box.make void, e)
 
   | S_obj (ListT, List (S_obj (IdT, Id "lambda")
                         :: S_obj (ListT, List params)
@@ -137,7 +137,7 @@ let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
                           |> List.map Box.make in
             apply box_f results >>= fun box_v ->
             kont (box_v, e')))
-  | v -> raise (Unexpected __LOC__)
+  | v -> raise (Unexpected (__LOC__, void))
 
 and eval_unquoted ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   let open U in

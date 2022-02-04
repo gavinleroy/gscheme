@@ -10,9 +10,6 @@
 
 include Result
 
-(* signals an internal error FIXME remove *)
-exception Unexpected of string
-
 (* MODULE types that will eventually be moved *)
 
 module Char = struct
@@ -45,6 +42,24 @@ end
 
 module Identifier = struct
   type t = string
+end
+
+module Gensym : sig
+  type t = string
+  val gensym : ?sym:string -> unit -> t
+  val compare : t -> t -> int
+end = struct
+  include String
+  type t = string
+  let counter = ref 0
+  let to_string v = v
+  let compare a b = String.compare a b
+  let gensym ?sym:(c = "g") () =
+    begin
+      incr counter;
+      string_of_int !counter
+      |> (^) c
+    end
 end
 
 module Vector :sig
@@ -148,6 +163,13 @@ and syntax_record = { e : scheme_object
                     ; scopes : Scopes.t
                     }
 
+and binding_variant = [ `Core_binding of Identifier.t
+                      | `Core_form of Identifier.t
+                      | `Local_binding of Gensym.t
+                      | `Variable of Gensym.t
+                      | `Missing of Gensym.t
+                      ]
+
 and lambda_record = { params : id list
                     ; varargs : id option
                     ; body : scheme_object list
@@ -157,7 +179,7 @@ and lambda_record = { params : id list
 and dyn_ref_map = scheme_object Box.t Map.Make(String).t
 
 and runtime_exn =
-  | Runtime_error of string
+  | Runtime_error of (string * scheme_object)
   | Arity_mismatch of (int * int * scheme_object list)
   | Type_mismatch of (string * scheme_object)
   | Free_var of string
@@ -170,6 +192,8 @@ and port =
   | WritePort of out_channel
   | ReadPort of in_channel
 
+let void = S_obj (VoidT, Void) (** The singleton void type *)
+
 (* TODO other control flow exn primitives *)
 
 (* module Syntax = struct
@@ -180,6 +204,10 @@ let ( >>= ) = Result.bind
 
 let ( >>| ) = fun f s -> Result.map s f
 
+let ( >> ) = fun f s ->
+  f >>= fun _ -> s
+
+
 let map_m : type a b e. (a -> (b, e) Result.t) -> a list -> (b list, e) Result.t
   = fun f ls ->
     (List.fold_left
@@ -188,3 +216,6 @@ let map_m : type a b e. (a -> (b, e) Result.t) -> a list -> (b list, e) Result.t
               f newr >>= (fun v ->
                   ok (v :: acc_ls)))) (ok [])) ls
     >>= (fun l -> List.rev l |> ok)
+
+(* signals an internal error FIXME remove *)
+exception Unexpected of (string * scheme_object)

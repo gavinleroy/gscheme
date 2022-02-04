@@ -17,6 +17,7 @@
           ;; The following were added for the new expander
           syntax
           scope
+          binding
  )
  (inline_tests)
  (preprocess (pps ppx_inline_test ppx_let)))

@@ -22,7 +22,7 @@ let syntax_scopes : scheme_object -> Scopes.t maybe_exn
     | obj -> error (Type_mismatch ("syntax?", obj))
 
 let empty_syntax =
-  S_obj (StxT, Stx { e = U.make_void
+  S_obj (StxT, Stx { e = Types.void
                    ; scopes = Scopes.empty })
 
 let is_identifier : scheme_object -> bool

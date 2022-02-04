@@ -30,24 +30,6 @@ module U = Util
 let hsh_size =
   1000
 
-module Gensym : sig
-  type t = string
-  val gensym : ?sym:string -> unit -> t
-  val compare : t -> t -> int
-end = struct
-  include String
-  type t = string
-  let counter = ref 0
-  let to_string v = v
-  let compare a b = String.compare a b
-  let gensym ?sym:(c = "g") () =
-    begin
-      incr counter;
-      string_of_int !counter
-      |> (^) c
-    end
-end
-
 (********************************************
  ** Syntax objects *)
 

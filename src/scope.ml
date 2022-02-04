@@ -9,6 +9,11 @@
 include Types.Scope
 module U = Util
 
+include struct
+  open Types
+  let ( >> ) = ( >> )
+end
+
 let rec adjust_scope
   : Types.scheme_object -> t
     -> (t -> Types.Scopes.t -> Types.Scopes.t)
@@ -47,9 +52,8 @@ let hsh_size = 1000 (* Estimated maximum number of bindings *)
 let all_bindings =
   Hashtbl.create ~random:false hsh_size
 
-let add_binding : Types.scheme_object
-  -> int (* FIXME this should be of type 'binding but I haven't made that
-          * module yet. Please change me. *)
+let add_binding_bang : Types.scheme_object
+  -> Types.binding_variant
   -> unit Types.maybe_exn
   = fun id binding ->
     match id with
@@ -59,21 +63,22 @@ let add_binding : Types.scheme_object
     | s -> Types.error (Types.Type_mismatch ("identifier?", s))
 
 let rec resolve (* : TODO add type *)
+  : Types.scheme_object -> (Types.binding_variant option) Types.maybe_exn
   = fun id ->
     match find_all_matching_bindings id with
-    | [] -> None
+    | [] -> Types.ok None
     | candidate_ids ->
       let max_id = argmax (fun s ->
           (Types.Scopes.cardinal
              (Syntax.syntax_scopes s
               |> Types.get_ok))) candidate_ids
       in
-      check_unambiguous max_id candidate_ids id;
-      Some (Hashtbl.find all_bindings max_id)
+      check_unambiguous max_id candidate_ids id >>
+      (Some (Hashtbl.find all_bindings max_id) |> Types.ok)
 
 and argmax
   = fun f xs -> match xs with
-    | [] -> raise (Types.Unexpected __LOC__)
+    | [] -> raise (Types.Unexpected (__LOC__, Types.void))
     | x :: xs ->
       List.fold_left (fun acc b ->
           if f acc > f b then
@@ -92,9 +97,9 @@ and find_all_matching_bindings
 
 and check_unambiguous
   = fun mx_c_id c_ids err_id ->
-    List.iter (fun c_id ->
+    Types.map_m (fun c_id ->
         if not (Types.Scopes.subset
                   (Syntax.syntax_scopes c_id |> Types.get_ok)
                   (Syntax.syntax_scopes mx_c_id |> Types.get_ok)) then
-          raise (Ambiguous_candidate_exn
-                   "change me to be a result instead of a exn")) c_ids
+          Types.error (Types.Runtime_error ("ambigious", err_id))
+        else Types.ok ()) c_ids

@@ -27,7 +27,7 @@ module List = struct
       match l with
       | (l :: ls) ->
         List.fold_left f l ls
-      | _ -> raise (T.Unexpected "foldl1 received empty list")
+      | _ -> raise (T.Unexpected ("foldl1 received empty list", T.void))
 
   let last : type a. a t -> a
     = fun ls -> List.rev ls |> List.hd
@@ -141,8 +141,6 @@ and is_not = function
   | T.S_obj (BoolT, Bool false) -> true
   | _ -> false
 
-and make_void = T.S_obj (VoidT, Void)
-
 and make_bool b = T.S_obj (BoolT, Bool b)
 
 and make_id id = T.S_obj (IdT, Id id)
@@ -220,7 +218,7 @@ let rec format_scheme_obj
           (pp_print_list ~pp_sep:pp_print_space
              fso) ls
           fso tl
-      | _ -> raise (T.Unexpected "fmt_scheme_object unexpected object")
+      | _ -> raise (T.Unexpected ("fmt_scheme_object unexpected object", T.void))
     in fprintf fmt "%a" fso s
 
 (* I'm not very familiar with the Format module but I believe the <2>
@@ -232,9 +230,10 @@ and format_runtime_exn
     let open Format in
     let open Types in
     let ind fmt s = match s with
-      | Runtime_error str ->
-        fprintf fmt "@[<v 2>%s: %s;@,<v 2>%s@]"
-          "XXX" "runtime error" str
+      | Runtime_error (msg, id) ->
+        fprintf fmt "@[<v 2>%s: %s;@,%s@,error identifier: %a@]"
+          "XXX" "runtime error" msg
+          format_scheme_obj id
 
       | Arity_mismatch (expected, given, objs) ->
         fprintf fmt "@[<v 2>%s: %s;@,expected: %d@,given: %d@,args: %a@]"
@@ -272,7 +271,7 @@ module Test = struct
       (* FIXME choose a different name of fix functionality *)
       List.last ast
     | Error s ->
-      raise (T.Unexpected __LOC__)
+      raise (T.Unexpected (__LOC__, T.void))
 
   let expect_exn : type a. Types.runtime_exn -> a Types.maybe_exn -> bool
   (** Check that the expected type of runtime exception was returned.

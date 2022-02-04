@@ -153,7 +153,9 @@ let rec scheme_object_of_sexp : sexp -> T.scheme_object
       begin match scheme_object_of_sexp inner with
         | Types.S_obj (ListT, List values) ->
           S_obj (VecT, Vec (T.Vector.of_list values))
-        | _ -> raise (T.Unexpected ("Hashed value not supported : " ^ __LOC__))
+        | _ -> raise (T.Unexpected
+                        ("Hashed value not supported : " ^ __LOC__,
+                         Types.void))
       end
 
 let sexpr_of_string : string -> sexp list T.maybe_exn
