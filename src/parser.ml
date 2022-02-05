@@ -20,6 +20,14 @@ type sexp =
   | SexpList of sexp list
   | SexpDotted of sexp list * sexp
 
+let char_list_to_string cs =
+  List.to_seq cs |> String.of_seq
+
+let first_then ft gt =
+  let%bind stem = ft in
+  let%bind sub = gt in
+  return (stem ^ (char_list_to_string sub))
+
 let is_whitespace = function
   | '\x20' | '\x0a' | '\x0d' | '\x09' -> true
   | _ -> false
@@ -68,14 +76,46 @@ let parse_ss_string =
                 <* char '"' in
   SexpString str
 
-let parse_atom =
-  let%bind stem = (letter <|> symbol) in
-  let%map rest = many (letter <|> digit <|> symbol) in
-  let full = stem :: rest
-             |> List.to_seq
-             |> String.of_seq
-  in
-  SexpId full
+
+
+let constituent = letter
+
+let special_initial =
+  choice [ char '!' ; char '$' ; char '%'
+         ; char '&' ; char '*' ; char '/'
+         ; char ':' ; char '<' ; char '='
+         ; char '>' ; char '?' ; char '^'
+         ; char '_' ; char '~'
+         ]
+
+let initial =
+  choice [ constituent
+         ; special_initial
+           (* ; inline_hex_escape *)
+         ]
+
+let special_subsequent =
+  choice [ char '+' ; char '-' ; char '.' ; char '@' ]
+
+let subsequent =
+  choice [ initial
+         ; digit
+         (* unicode character category Nd, Mc, Me *)
+         ; special_subsequent
+         ]
+
+let peculiar_identifier =
+  first_then
+    (choice [ string "+"; string "-"
+            ; string "..."; string "->" ])
+    (many subsequent)
+
+let identifier =
+  choice [ first_then
+             (initial >>| String.make 1)
+             (many subsequent)
+         ; peculiar_identifier
+         ] >>| (fun id -> SexpId id)
 
 let parse_expr =
   fix (fun parse_expr ->
@@ -112,7 +152,7 @@ let parse_expr =
         (SexpHash e)
 
       in
-      choice [ lex parse_atom
+      choice [ lex identifier
              ; lex parse_ss_string
              ; lex parse_int
              ; lex parse_bool
