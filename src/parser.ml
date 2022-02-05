@@ -6,6 +6,10 @@
 (*                                         *)
 (*******************************************)
 
+(* NOTE the parser is very minimal, and will only be expanded as
+ * needed by functionality demands.
+ **)
+
 open Angstrom
 open Let_syntax
 (* open Types *)
