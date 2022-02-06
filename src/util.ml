@@ -165,6 +165,13 @@ and make_syntax s = T.S_obj (StxT, Stx s)
 
 and make_port p = T.S_obj (PortT, Port p)
 
+let is_symbol = is_id
+
+let unwrap_symbol = unwrap_id
+
+(* NOTE in racket keword? -> true when #:... *)
+let is_keyword _ = false
+
 (* unsafe operations / INTERNAL USE ONLY *)
 
 let unwrap_list_exn =

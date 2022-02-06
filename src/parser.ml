@@ -36,9 +36,6 @@ let is_whitespace = function
   | '\x20' | '\x0a' | '\x0d' | '\x09' -> true
   | _ -> false
 
-let is_symbol c =
-  String.contains "!$%&|*+-/:<=>?@^_~" c
-
 let is_digit = function
   | '0'..'9' -> true
   | _ -> false
@@ -61,9 +58,6 @@ let parse_int = (* TODO handle signed numbers *)
 let digit =
   satisfy is_digit
 
-let symbol =
-  satisfy is_symbol
-
 let letter =
   satisfy is_alpha
 
@@ -82,7 +76,13 @@ let parse_ss_string =
 
 
 
-let constituent = letter
+let constituent =
+  choice [ letter
+  (* ; any unicode char whose scalar is > 127, and whose category
+     is Lu, Ll, Lt, Lm, Lo, Mn, Nl, No, Pd, Pc, Po, Sc, Sm,
+     Sk, So, or Co.
+  *)
+         ]
 
 let special_initial =
   choice [ char '!' ; char '$' ; char '%'

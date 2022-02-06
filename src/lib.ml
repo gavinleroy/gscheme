@@ -14,16 +14,51 @@ open Util
  * argument lenghts
  **)
 
+(* TODO FIXME equality *)
+
+let is_equal a b =
+  a = b
+
+let eqv a b =
+  a = b
+
+let eq a b =
+  a = b
+
+(* predicates can be found in the Util library, contract functions below *)
+
+let rec list_of
+  = fun p a2 -> match a2 with
+    | S_obj (ListT, List ls) ->
+      List.for_all p ls
+    | other -> false
+
+and assoc ?equality:(e = is_equal) v ls =
+  match ls with
+  | ls when is_list ls && list_of is_pair ls ->
+    List.find_opt (fun pair ->
+        (car pair >>| fun c -> e c v)
+        |> value ~default:false) (unwrap_list_exn ls)
+    |> ok
+  | ls when is_list ls -> error (Type_mismatch ("pair? in-list", ls))
+  | other -> error (Type_mismatch ("list?", ls))
+
+and assv v ls =
+  assoc ~equality:eqv v ls
+
+and assq v ls =
+  assoc ~equality:eq v ls
+
 (* pair / list primitives *)
 
-let car : scheme_object -> scheme_object maybe_exn
+and car : scheme_object -> scheme_object maybe_exn
   = function
     | S_obj (ListT, List (v :: _))
     | S_obj (DottedT, Dotted ((v :: _), _)) ->
       ok v
     | arg -> error (Type_mismatch ("pair?", arg))
 
-let cdr : scheme_object -> scheme_object maybe_exn
+and cdr : scheme_object -> scheme_object maybe_exn
   = function
     | S_obj (ListT, List (_ :: ls)) ->
       make_list ls |> ok
@@ -32,6 +67,18 @@ let cdr : scheme_object -> scheme_object maybe_exn
     | S_obj (DottedT, Dotted ((_ :: ls), tl)) ->
       make_dotted (ls, tl) |> ok
     | arg -> error (Type_mismatch ("pair?", arg))
+
+let caar : scheme_object -> scheme_object maybe_exn
+  = fun a1 -> car a1 >>= car (* (car (car a1)) *)
+
+let cddr : scheme_object -> scheme_object maybe_exn
+  = fun a1 -> cdr a1 >>= cdr (* (cdr (cdr a1)) *)
+
+let cadr : scheme_object -> scheme_object maybe_exn
+  = fun a1 -> cdr a1 >>= car (* (car (cdr a1)) *)
+
+let cdar : scheme_object -> scheme_object maybe_exn
+  = fun a1 -> car a1 >>= cdr (* (cdr (car a1)) *)
 
 let cons : scheme_object -> scheme_object -> scheme_object maybe_exn
   = fun a1 a2 -> match a1, a2 with
@@ -53,6 +100,30 @@ let list_ref : scheme_object -> scheme_object -> scheme_object maybe_exn
           Printf.sprintf "index %d out of range" idx, a2))
     | ls, intgr when is_list ls ->
       error (Type_mismatch ("integer?", intgr))
+    | ls, _ -> error (Type_mismatch ("list?", ls))
+
+let list_length : scheme_object -> scheme_object maybe_exn
+  = fun a1 -> match a1 with
+    | S_obj (ListT, List ls) ->
+      List.length ls |> Int64.of_int
+      |> Util.make_int |> ok
+    | ls -> error (Type_mismatch ("list?", ls))
+
+let list_map : (scheme_object -> scheme_object maybe_exn) -> scheme_object -> scheme_object maybe_exn
+  = fun f a2 -> match a2 with
+    | S_obj (ListT, List ls) ->
+      map_m f ls >>| (fun results -> make_list results)
+    | ls  -> error (Type_mismatch ("list?", ls))
+
+let pair_append : scheme_object -> scheme_object -> scheme_object maybe_exn
+  = fun a1 a2 -> match a1, a2 with
+    | S_obj (ListT, List firstl), S_obj (ListT, List secondl) ->
+      List.append firstl secondl |> make_list |> ok
+    | S_obj (ListT, List firstl), S_obj (DottedT, Dotted (secondl, rest)) ->
+      List.append firstl secondl |> (fun stem ->
+          make_dotted (stem, rest)) |> ok
+    | ls, other when is_list ls ->
+      error (Type_mismatch ("pair?", other))
     | ls, _ -> error (Type_mismatch ("list?", ls))
 
 let vector_ref : scheme_object -> scheme_object -> scheme_object maybe_exn

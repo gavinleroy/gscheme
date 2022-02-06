@@ -109,6 +109,10 @@ let base : scheme_object Box.t t
 
   |> ext "car" (single_arg_procedure Lib.car)
   |> ext "cdr" (single_arg_procedure Lib.cdr)
+  |> ext "caar" (single_arg_procedure Lib.caar)
+  |> ext "cddr" (single_arg_procedure Lib.cddr)
+  |> ext "cadr" (single_arg_procedure Lib.cadr)
+  |> ext "cdar" (single_arg_procedure Lib.cdar)
   (* Add additional cadr cdar ... *)
   |> ext "cons" (double_arg_procedure Lib.cons)
   |> ext "list-ref" (double_arg_procedure Lib.list_ref)

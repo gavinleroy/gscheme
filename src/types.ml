@@ -194,11 +194,9 @@ and port =
 
 let void = S_obj (VoidT, Void) (** The singleton void type *)
 
-(* TODO other control flow exn primitives *)
+let null = S_obj (ListT, List []) (** The singleton '() *)
 
-(* module Syntax = struct
- *   type t = syntax_record
- * end *)
+(* TODO other control flow exn primitives *)
 
 let ( >>= ) = Result.bind
 
