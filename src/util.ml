@@ -187,6 +187,14 @@ let list_map : (T.scheme_object -> T.scheme_object) -> T.scheme_object -> T.sche
       make_list (List.map f ls) |> T.ok
     | obj -> T.error (T.Type_mismatch ("list?", obj))
 
+let list_map_m : (T.scheme_object -> T.scheme_object T.maybe_exn) -> T.scheme_object -> T.scheme_object T.maybe_exn
+  = fun f -> function
+    | T.S_obj (T.ListT, T.List ls) ->
+      T.map (fun rs -> make_list rs) (T.map_m f ls)
+    | obj -> T.error (T.Type_mismatch ("list?", obj))
+
+(* Formatting utilities *)
+
 let rec format_scheme_obj
   = fun fmt s ->
     let open Format in

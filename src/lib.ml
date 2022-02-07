@@ -197,3 +197,23 @@ let close_output_port : scheme_object -> scheme_object maybe_exn
         ok void
       end
     | bad -> error (Type_mismatch ("output-port?", bad))
+
+(* *********************** *)
+
+(* let apply : (scheme_object -> scheme_object maybe_exn) -> scheme_object -> scheme_object maybe_exn
+ *   = fun f o -> match o with
+ *     | S_obj (ListT, List ls) ->
+ *       map_m f ls >>| make_list
+ *     | other -> error (Type_mismatch ("list?", o)) *)
+
+let transpose ll =
+  let rec transpose' acc = function
+    | [] -> acc
+    | [] :: _ -> acc
+    | m ->
+      transpose' ((List.map List.hd m) :: acc) (List.map List.tl m)
+  in match ll with
+  | S_obj (ListT, List ll) ->
+    map_m unwrap_list ll >>| fun ll ->
+    (List.rev_map make_list (transpose' [] ll) |> make_list)
+  | other -> error (Type_mismatch ("list?", ll))

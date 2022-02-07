@@ -79,7 +79,7 @@ let match_syntax : scheme_object -> scheme_object
               Types.error (Types.Bad_form ("bad syntax", orig_s))
             else make_empty_vars pattern |> Types.ok
           | flat_s when U.is_list flat_s ->
-            (* TODO not sure how to replicate this best *)
+            (* NOTE original code for when my implementation goes horribly wrong *)
             (* [(list? flat-s)
              *         (define a-lists
              *           (for/list ([s (in-list flat-s)])
@@ -89,7 +89,14 @@ let match_syntax : scheme_object -> scheme_object
              *                  (list (caar slice)
              *                        (map cadr slice)))
              *                a-lists)] *)
-            raise (Types.Unexpected ("TODO not implemented", orig_s))
+            Types.map_m
+              (fun s -> Lib.car pattern >>= matcher s)
+              (Util.unwrap_list_exn flat_s) >>= fun a_lists ->
+            Lib.transpose (Util.make_list a_lists) >>= fun trsp ->
+            Util.list_map_m (fun l ->
+                Lib.caar l >>= fun caar ->
+                Lib.cadr l >>| fun cadr ->
+                Util.make_list [ caar; cadr ]) trsp
 
           | otherwise -> Types.error (Types.Bad_form ("bad syntax", otherwise))
         end
