@@ -165,9 +165,13 @@ and make_syntax s = T.S_obj (StxT, Stx s)
 
 and make_port p = T.S_obj (PortT, Port p)
 
+(* these should be used, and XXX_id variants deprecated *)
+
 let is_symbol = is_id
 
 let unwrap_symbol = unwrap_id
+
+let make_symbol = make_id
 
 (* NOTE in racket keword? -> true when #:... *)
 let is_keyword _ = false

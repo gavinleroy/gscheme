@@ -205,6 +205,9 @@ let ( >>| ) = fun f s -> Result.map s f
 let ( >> ) = fun f s ->
   f >>= fun _ -> s
 
+let to_bool = function
+  | Ok _ -> true
+  | Error _ -> false
 
 let map_m : type a b e. (a -> (b, e) Result.t) -> a list -> (b list, e) Result.t
   = fun f ls ->

@@ -1,6 +1,6 @@
 ;;-------------------------------------------
 ;;
-;; Gavin Gray 01.2022
+;; Gavin Gray 02.2022
 ;;
 ;; GScheme
 ;;
@@ -19,6 +19,8 @@
           scope
           binding
           match
+          core
+          compile
  )
  (inline_tests)
  (preprocess (pps ppx_inline_test ppx_let)))

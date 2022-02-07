@@ -18,11 +18,13 @@ end
 
 let is_core_binding = function
   | `Core_binding _ -> true
-  | _ -> false
+  | `Core_form _ -> false
+  | `Local_binding _ -> false
+  | _other -> false
 
 and core_sym = function
   | `Core_binding sym -> sym
-  | _ -> raise (Types.Unexpected ("binding core-sym precondition invalidated", Types.void))
+  | _ -> raise (Types.Unexpected ("binding 'core-sym precondition invalidated", Types.void))
 
 let is_local_binding = function
   | `Local_binding _ -> true
