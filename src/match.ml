@@ -11,10 +11,8 @@
 
 module U = Util
 
-open struct
-  include Types
-  let ( >>= ), ( >>| ) = ( >>= ), ( >>| )
-end
+open Types
+open Err
 
 let is_list_len_2_or_va pattern =
   U.is_list pattern &&
@@ -28,16 +26,16 @@ let rec to_syntax_list : scheme_object -> scheme_object
       (Lib.car s >>= fun car ->
        Lib.cdr s >>= fun cdr ->
        Lib.cons car (to_syntax_list cdr))
-      |> Types.get_ok
+      |> get_ok
     | s when U.is_syntax s ->
       (Syntax.syntax_e s >>| to_syntax_list)
-      |> Types.get_ok
+      |> get_ok
     | s -> s
 
 let rec make_empty_vars
   = function
     | pattern when U.is_symbol pattern ->
-      U.make_list [ U.make_list [ pattern; Types.null ] ]
+      U.make_list [ U.make_list [ pattern; null ] ]
     | pattern when is_list_len_2_or_va pattern ->
       Lib.list_map (fun m ->
           Lib.cadr m >>= fun cadr ->
@@ -52,7 +50,7 @@ let rec make_empty_vars
          (make_empty_vars car)
          (make_empty_vars cdr))
       |> get_ok
-    | els -> Types.null
+    | els -> null
 
 
 let match_syntax : scheme_object -> scheme_object
@@ -63,11 +61,11 @@ let match_syntax : scheme_object -> scheme_object
   = fun orig_s pattern ->
     let rec matcher s pattern = match pattern with
       | pattern when U.is_symbol pattern ->
-        if (Str.string_match (Str.regexp "^id(:\\|$)") (U.unwrap_symbol pattern |> Types.get_ok) 0
+        if (Str.string_match (Str.regexp "^id(:\\|$)") (U.unwrap_symbol pattern |> get_ok) 0
             && not (U.is_id s)
            ) then
-          Types.error (Types.Bad_form ("not an identifier", s))
-        else U.make_list [ U.make_list [ pattern; s ] ] |> Types.ok
+          error (Bad_form ("not an identifier", s))
+        else U.make_list [ U.make_list [ pattern; s ] ] |> ok
 
       | _ when U.is_syntax s ->
         Syntax.syntax_e s >>= (fun e -> matcher e pattern)
@@ -76,8 +74,8 @@ let match_syntax : scheme_object -> scheme_object
         begin match to_syntax_list s with
           | flat_s when U.is_null flat_s ->
             if Lib.cadr pattern >>= U.unwrap_symbol = Ok "...+" then
-              Types.error (Types.Bad_form ("bad syntax", orig_s))
-            else make_empty_vars pattern |> Types.ok
+              error (Bad_form ("bad syntax", orig_s))
+            else make_empty_vars pattern |> ok
           | flat_s when U.is_list flat_s ->
             (* NOTE original code for when my implementation goes horribly wrong *)
             (* [(list? flat-s)
@@ -89,7 +87,7 @@ let match_syntax : scheme_object -> scheme_object
              *                  (list (caar slice)
              *                        (map cadr slice)))
              *                a-lists)] *)
-            Types.map_m
+            map_m
               (fun s -> Lib.car pattern >>= matcher s)
               (Util.unwrap_list_exn flat_s) >>= fun a_lists ->
             Lib.transpose (Util.make_list a_lists) >>= fun trsp ->
@@ -98,7 +96,7 @@ let match_syntax : scheme_object -> scheme_object
                 Lib.cadr l >>| fun cadr ->
                 Util.make_list [ caar; cadr ]) trsp
 
-          | otherwise -> Types.error (Types.Bad_form ("bad syntax", otherwise))
+          | otherwise -> error (Bad_form ("bad syntax", otherwise))
         end
 
       | pattern when U.is_pair pattern ->
@@ -110,19 +108,19 @@ let match_syntax : scheme_object -> scheme_object
           matcher cars carp >>= fun firsta ->
           matcher cdrs cdrp >>= fun seconda ->
           Lib.pair_append firsta seconda
-        else Types.error (Types.Bad_form ("bad syntax", orig_s))
+        else error (Bad_form ("bad syntax", orig_s))
 
       | pattern when U.is_null pattern ->
         if U.is_null s then
-          Types.null |> Types.ok
-        else Types.error (Types.Bad_form ("bad syntax", orig_s))
+          null |> ok
+        else error (Bad_form ("bad syntax", orig_s))
 
       | pattern when (U.is_bool pattern ||
                       U.is_keyword pattern) &&
                      (pattern = s) ->
-        Types.null |> Types.ok
+        null |> ok
 
-      | other -> Types.error (Types.Bad_form ("bad pattern", other))
+      | other -> error (Bad_form ("bad pattern", other))
     in
     (* FIXME should this return a procedure s_obj? *)
     (* (define a-list (match orig-s pattern))
@@ -135,9 +133,9 @@ let match_syntax : scheme_object -> scheme_object
     (fun sym ->
        Lib.assq sym a_list >>= function
        | Some a -> Lib.cadr a
-       | None -> Types.error (Types.Bad_form ("no such pattern variable", sym)))
+       | None -> error (Bad_form ("no such pattern variable", sym)))
 
 let try_match_syntax
   = fun orig_s pattern ->
     match_syntax orig_s pattern
-    |> Types.to_option
+    |> to_option

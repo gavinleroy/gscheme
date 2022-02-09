@@ -6,10 +6,6 @@
 (*                                         *)
 (*******************************************)
 
-(* FIXME restrict module interface *)
-
-include Result
-
 (* MODULE types that will eventually be moved *)
 
 module Char = struct
@@ -106,24 +102,43 @@ end
 
 module Scopes = Set.Make(Scope)
 
-let core_forms = [ "lambda"
-                 ; "let-syntax"
-                 ; "#%app"
-                 ; "quote"
-                 ; "quote-syntax"
-                 ]
+type _ scheme_type = ..
 
-let core_primitives = [ "datum->syntax"
-                      ; "syntax->datum"
-                      ; "syntax-e"
-                      ; "list"
-                      ; "cons"
-                      ; "car"
-                      ; "cdr"
-                      ; "map"
-                      ]
+type _ scheme_value = ..
 
-type _ scheme_type =
+type runtime_exn' =
+  | Runtime_error of (string * scheme_object)
+  | Arity_mismatch of (int * int * scheme_object list)
+  | Type_mismatch of (string * scheme_object)
+  | Free_var of string
+  | Bad_form of (string * scheme_object)
+  | Parser of string
+
+and 'a maybe_exn = ('a, runtime_exn') Result.t
+
+and proc_sig = (scheme_object list -> scheme_object maybe_exn)
+
+and (_, _) eq = Eq : ('a, 'a) eq
+
+and scheme_object = S_obj : 'a scheme_type * 'a scheme_value -> scheme_object
+
+and syntax_record = { e : scheme_object
+                    ; scopes : Scopes.t
+                    }
+
+and lambda_record = { params : id list
+                    ; varargs : id option
+                    ; body : scheme_object list
+                    ; closure : dyn_ref_map
+                    }
+
+and dyn_ref_map = scheme_object Box.t Map.Make(String).t
+
+and port =
+  | WritePort of out_channel
+  | ReadPort of in_channel
+
+type _ scheme_type +=
   | VoidT : unit scheme_type
   | BoolT : bool scheme_type
   | NumT : Number.t scheme_type
@@ -138,59 +153,20 @@ type _ scheme_type =
   | ProcT : proc_sig scheme_type
   | PortT : port scheme_type
 
-and _ value =
-  | Void : unit value
-  | Bool : bool -> bool value
-  | Num : Number.t -> Number.t value
-  | Char : Char.t -> Char.t value
-  | String : String.t -> String.t value
-  | Id : id -> id value
-  | Stx : syntax_record -> syntax_record value
-  | List : scheme_object list -> scheme_object list value
-  | Vec : scheme_object Vector.t -> scheme_object Vector.t value
-  | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) value
-  | Lamb : lambda_record -> lambda_record value
-  | Proc : proc_sig -> proc_sig value
-  | Port : port -> port value
-
-and proc_sig = (scheme_object list -> scheme_object maybe_exn)
-
-and (_, _) eq = Eq : ('a, 'a) eq
-
-and scheme_object = S_obj : 'a scheme_type * 'a value -> scheme_object
-
-and syntax_record = { e : scheme_object
-                    ; scopes : Scopes.t
-                    }
-
-and binding_variant = [ `Core_binding of Identifier.t
-                      | `Core_form of Identifier.t
-                      | `Local_binding of Gensym.t
-                      | `Variable of Gensym.t
-                      | `Missing of Gensym.t
-                      ]
-
-and lambda_record = { params : id list
-                    ; varargs : id option
-                    ; body : scheme_object list
-                    ; closure : dyn_ref_map
-                    }
-
-and dyn_ref_map = scheme_object Box.t Map.Make(String).t
-
-and runtime_exn =
-  | Runtime_error of (string * scheme_object)
-  | Arity_mismatch of (int * int * scheme_object list)
-  | Type_mismatch of (string * scheme_object)
-  | Free_var of string
-  | Bad_form of (string * scheme_object)
-  | Parser of string
-
-and 'a maybe_exn = ('a, runtime_exn) Result.t
-
-and port =
-  | WritePort of out_channel
-  | ReadPort of in_channel
+type _ scheme_value +=
+  | Void : unit scheme_value
+  | Bool : bool -> bool scheme_value
+  | Num : Number.t -> Number.t scheme_value
+  | Char : Char.t -> Char.t scheme_value
+  | String : String.t -> String.t scheme_value
+  | Id : id -> id scheme_value
+  | Stx : syntax_record -> syntax_record scheme_value
+  | List : scheme_object list -> scheme_object list scheme_value
+  | Vec : scheme_object Vector.t -> scheme_object Vector.t scheme_value
+  | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) scheme_value
+  | Lamb : lambda_record -> lambda_record scheme_value
+  | Proc : proc_sig -> proc_sig scheme_value
+  | Port : port -> port scheme_value
 
 let void = S_obj (VoidT, Void) (** The singleton void type *)
 
@@ -198,25 +174,60 @@ let null = S_obj (ListT, List []) (** The singleton '() *)
 
 (* TODO other control flow exn primitives *)
 
-let ( >>= ) = Result.bind
+module Err : sig
 
-let ( >>| ) = fun f s -> Result.map s f
+  (* signals an internal error FIXME remove *)
+  exception Unexpected of (string * scheme_object)
 
-let ( >> ) = fun f s ->
-  f >>= fun _ -> s
+  type runtime_exn = runtime_exn'
 
-let to_bool = function
-  | Ok _ -> true
-  | Error _ -> false
+  and 'a t = 'a maybe_exn
 
-let map_m : type a b e. (a -> (b, e) Result.t) -> a list -> (b list, e) Result.t
-  = fun f ls ->
-    (List.fold_left
-       (fun acc  newr->
-          acc >>= (fun acc_ls ->
-              f newr >>= (fun v ->
-                  ok (v :: acc_ls)))) (ok [])) ls
-    >>= (fun l -> List.rev l |> ok)
+  val ok : 'a -> 'a t
+  val error : runtime_exn -> 'a t
+  val get_ok : 'a t -> 'a
+  val value : 'a t -> default:'a -> 'a
+  val to_option : 'a t -> 'a option
+  val to_bool : 'a t -> bool
+  val bind : 'a t -> ('a -> 'b t) -> 'b t
+  val map : 'a t -> ('a -> 'b) -> 'b t
+  val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
+  val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( >> ) : 'a t -> 'c t -> 'c t
+  val map_m : ('a -> 'b t) -> 'a list -> 'b list t
 
-(* signals an internal error FIXME remove *)
-exception Unexpected of (string * scheme_object)
+end = struct
+
+  include Result
+
+  type runtime_exn = runtime_exn'
+
+  and 'a t = 'a maybe_exn
+
+  (* signals an internal error FIXME remove *)
+  exception Unexpected of (string * scheme_object)
+
+  let error : type a. runtime_exn -> a t
+    = fun e ->
+      Error e
+
+  let ( >>= ) = Result.bind
+  let map = fun f s -> Result.map s f
+  let ( >>| ) = map
+  let ( >> ) = fun f s ->
+    f >>= fun _ -> s
+
+  let to_bool = function
+    | Ok _ -> true
+    | Error _ -> false
+
+  let map_m : type a b e. (a -> (b, e) Result.t) -> a list -> (b list, e) Result.t
+    = fun f ls ->
+      (List.fold_left
+         (fun acc  newr->
+            acc >>= (fun acc_ls ->
+                f newr >>= (fun v ->
+                    ok (v :: acc_ls)))) (ok [])) ls
+      >>= (fun l -> List.rev l |> ok)
+
+end

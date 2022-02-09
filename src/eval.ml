@@ -8,6 +8,7 @@
 
 module U = Util
 open Types
+open Err
 
 let rec eval ?env:(e = Namespace.base) ?kont:(kont = final_kont) s =
   let kontinue v = kont (Box.make v, e) in

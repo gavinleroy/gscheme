@@ -13,13 +13,13 @@ type t = syntax_record
 
 let syntax_e : scheme_object -> scheme_object maybe_exn
   = function
-    | S_obj (StxT, Stx r) -> ok r.e
-    | obj -> error (Type_mismatch ("syntax?", obj))
+    | S_obj (StxT, Stx r) -> Err.ok r.e
+    | obj -> Err.error (Type_mismatch ("syntax?", obj))
 
 let syntax_scopes : scheme_object -> Scopes.t maybe_exn
   = function
-    | S_obj (StxT, Stx r) -> ok r.scopes
-    | obj -> error (Type_mismatch ("syntax?", obj))
+    | S_obj (StxT, Stx r) -> Err.ok r.scopes
+    | obj -> Err.error (Type_mismatch ("syntax?", obj))
 
 let empty_syntax =
   S_obj (StxT, Stx { e = Types.void
@@ -40,7 +40,7 @@ let is_eq_bound_identifier : scheme_object -> scheme_object -> bool
                end
 
 let rec syntax_to_datum
-  = fun s ->
+  = fun s -> let open Err in
     syntax_e s >>= function
     | e when U.is_list e ->
       map_m syntax_to_datum (U.unwrap_list_exn e)

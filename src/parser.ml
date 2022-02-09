@@ -12,8 +12,7 @@
 
 open Angstrom
 open Let_syntax
-(* open Types *)
-module T = Types
+open Types
 
 type sexp =
   | SexpBool of bool
@@ -171,7 +170,7 @@ let parse_expr =
 let parse_prog =
   whitespace *> many1 (lex parse_expr)
 
-let rec scheme_object_of_sexp : sexp -> T.scheme_object
+let rec scheme_object_of_sexp : sexp -> scheme_object
   = function
     | SexpBool b -> Types.S_obj (BoolT, Bool b)
     | SexpInt i -> Types.S_obj (NumT, Num (Types.Number.Int i))
@@ -196,21 +195,23 @@ let rec scheme_object_of_sexp : sexp -> T.scheme_object
     | SexpHash inner ->
       begin match scheme_object_of_sexp inner with
         | Types.S_obj (ListT, List values) ->
-          S_obj (VecT, Vec (T.Vector.of_list values))
-        | _ -> raise (T.Unexpected
+          S_obj (VecT, Vec (Vector.of_list values))
+        | _ -> raise (Err.Unexpected
                         ("Hashed value not supported : " ^ __LOC__,
                          Types.void))
       end
 
-let sexpr_of_string : string -> sexp list T.maybe_exn
+let sexpr_of_string : string -> sexp list Err.t
   = fun s ->
     match parse_string ~consume:Consume.All parse_prog s with
-    | Ok parsed -> T.ok parsed
-    | Error e -> T.error (T.Parser e)
+    | Ok parsed -> Err.ok parsed
+    | Error e -> Err.error (Parser e)
 
-let scheme_object_of_string : string -> T.scheme_object list T.maybe_exn
-  = fun s -> let open Types in
-    sexpr_of_string s >>| List.map scheme_object_of_sexp
+let scheme_object_of_string : string -> scheme_object list Err.t
+  = fun s ->
+    Err.map
+      (sexpr_of_string s)
+      (List.map scheme_object_of_sexp)
 
 let%test_module "parser inline tests" = (module struct
 

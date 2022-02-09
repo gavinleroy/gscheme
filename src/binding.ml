@@ -9,42 +9,55 @@
 (*                                         *)
 (*******************************************)
 
-type t = Types.binding_variant
+module S = Scope
+open Types (* ^ v stop overusing the open *)
+module Scope = S
+open Err
 
-include struct
-  open Types
-  let ( >> ) = ( >> )
-end
+type _ Types.scheme_type +=
+  | Gensym : Gensym.t scheme_type
+  | TransformerT : (scheme_object -> scheme_object Err.t) scheme_type
+
+type _ Types.scheme_value +=
+  | Core_binding : id -> id scheme_value
+  | Core_form : id -> id scheme_value
+  | Local_binding : Gensym.t -> Gensym.t Types.scheme_value
+  | Transformer : (scheme_object -> scheme_object maybe_exn)
+      -> (scheme_object -> scheme_object maybe_exn) Types.scheme_value
+  | Variable : unit Types.scheme_value
+  | Missing : unit Types.scheme_value
+
+(* include struct
+ *   let ( >> ) = TypeslErr.( >> )
+ * end *)
 
 let is_core_binding = function
-  | `Core_binding _ -> true
-  | `Core_form _ -> false
-  | `Local_binding _ -> false
-  | _other -> false
-
-and core_sym = function
-  | `Core_binding sym -> sym
-  | _ -> raise (Types.Unexpected ("binding 'core-sym precondition invalidated", Types.void))
-
-let is_local_binding = function
-  | `Local_binding _ -> true
+  | S_obj (IdT, Core_binding _) -> true
   | _ -> false
 
-and local_key = function
-  | `Local_binding key -> key
-  | _ -> raise (Types.Unexpected ("binding local-key precondition invalidated", Types.void))
+and core_binding_sym = function
+  | S_obj (IdT, Core_binding sym) -> sym
+  | _ -> raise (Unexpected ("binding 'core-sym precondition invalidated", Types.void))
+
+let is_local_binding = function
+  | S_obj (IdT, Local_binding _) -> true
+  | _ -> false
+
+and local_binding_key = function
+  | S_obj (IdT, Local_binding key) -> key
+  | _ -> raise (Unexpected ("binding local-key precondition invalidated", Types.void))
 
 let is_eq_free_identifier
   = fun a b ->
-    let ab = Scope.resolve a |> Types.get_ok |> Option.get
-    and bb = Scope.resolve b |> Types.get_ok |> Option.get
+    let ab = Scope.resolve a |> get_ok |> Option.get
+    and bb = Scope.resolve b |> get_ok |> Option.get
     in (* FIXME could the above two ever fail? *)
     match ab with
     |  ab when is_core_binding ab ->
-      (is_core_binding bb) && (core_sym ab = core_sym bb)
+      (is_core_binding bb) && (core_binding_sym ab = core_binding_sym bb)
     |  ab when is_local_binding ab ->
-      (is_local_binding bb) && (local_key ab = local_key bb)
-    | ab -> raise (Types.Unexpected
+      (is_local_binding bb) && (local_binding_key ab = local_binding_key bb)
+    | ab -> raise (Unexpected
                      ("the guarded expressions of 'free-identifier=? should be exhaustive"
                      , Types.void))
 
@@ -52,13 +65,13 @@ let add_local_binding_bang
   = fun id ->
     begin
       if not (Syntax.is_identifier id) then
-        raise (Types.Unexpected
+        raise (Unexpected
                  ("arg must satisfy predicate identifier?", id));
       let key = Types.Gensym.gensym ~sym:(
-          Syntax.syntax_e id |> Types.get_ok
-          |> Util.unwrap_id |> Types.get_ok) () in
-      Scope.add_binding_bang id (`Local_binding key) >>
-      Types.ok key
+          Syntax.syntax_e id |> get_ok
+          |> Util.unwrap_id |> get_ok) () in
+      Scope.add_binding_bang id (S_obj (IdT, Local_binding key))
+      >> ok key
     end
 
 
@@ -72,22 +85,22 @@ let empty_env =
 let env_extend env key vl =
   MacroCompileEnv.add key vl env
 
-let variable =
-  Types.Gensym.gensym ~sym:"variable" ()
+let variable = S_obj (VoidT, Variable)
 
 let is_variable = function
-  | `Variable v when v = variable -> true
+  | S_obj (VoidT, Variable) -> true
   | _ -> false
 
 let missing =
   Types.Gensym.gensym ~sym:"missing" ()
 
 let is_missing = function
-  | `Missing v when v = missing -> true
+  | S_obj (VoidT, Missing) -> true
   | _ -> false
 
-let is_transformer t =
-  Util.is_procedure t
+let is_transformer = function
+  | S_obj (TransformerT, Transformer _) -> true
+  | _ -> false
 
 (* FIXME ----
  * questionss:
@@ -96,35 +109,16 @@ let is_transformer t =
  **)
 let binding_lookup b core_forms env id =
   if is_core_binding b then
-    begin match  MacroCompileEnv.find_opt (core_sym b) core_forms with
-      | None -> `Variable variable
-      | Some c -> `Core_form c
+    begin match  Hashtbl.find_opt core_forms (core_binding_sym b) with
+      | None -> variable
+      | Some c -> c (* S_obj (IdT, Core_form c) *)
     end
   else if is_local_binding b then
-    begin match MacroCompileEnv.find_opt (local_key b) env with
-      | None -> raise (Types.Unexpected
+    begin match MacroCompileEnv.find_opt (local_binding_key b) env with
+      | None -> raise (Unexpected
                          ("identifier used out of context", id))
       | Some v -> v
     end
   else
-    raise (Types.Unexpected
+    raise (Unexpected
              ("internal error: unknown binding for lookup", Types.void))
-
-(*
- * ;; A subset of compile-time values are primitive forms
- * (struct core-form (expander) #:transparent)
- *
- * ;; Returns `variable` or a compile-time value
- * (define (binding-lookup b core-forms env id)
- *   (cond
- *    [(core-binding? b)
- *     (define c (hash-ref core-forms (core-binding-sym b) #f))
- *     (if c
- *         (core-form c)
- *         variable)] ; assume a non-form reference is a primitive
- *    [(local-binding? b)
- *     (define t (hash-ref env (local-binding-key b) missing))
- *     (when (eq? t missing)
- *       (error "identifier used out of context:" id))
- *     t]
- *    [else (error "internal error: unknown binding for lookup:" b)])) *)

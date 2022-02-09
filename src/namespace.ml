@@ -7,17 +7,18 @@
 (*******************************************)
 
 open Types
+open Err
 module U = Util
 
 module Wrappers = struct
 
   (* NOTE this obviously isn't sustainable for n arg procedures but this can come with macros *)
-  let single_arg_procedure : (scheme_object -> scheme_object maybe_exn) -> scheme_object
+  let single_arg_procedure : (scheme_object -> scheme_object Err.t) -> scheme_object
     = fun func -> U.make_proc (function
         | [ arg ] -> func arg
         | args -> error (Arity_mismatch (1, List.length args, args)))
 
-  let double_arg_procedure : (scheme_object -> scheme_object -> scheme_object maybe_exn) -> scheme_object
+  let double_arg_procedure : (scheme_object -> scheme_object -> scheme_object Err.t) -> scheme_object
     = fun func -> U.make_proc (function
         | [ arg1; arg2 ] -> func arg1 arg2
         | args -> error (Arity_mismatch (2, List.length args, args)))
@@ -27,7 +28,7 @@ module Wrappers = struct
         | [ arg1; arg2; arg3 ] -> func arg1 arg2 arg3
         | args -> error (Arity_mismatch (3, List.length args, args)))
 
-  let min_2_arg_procedure : type a. (a -> a -> a) -> (scheme_object -> a maybe_exn) -> (a -> scheme_object) -> scheme_object
+  let min_2_arg_procedure : type a. (a -> a -> a) -> (scheme_object -> a Err.t) -> (a -> scheme_object) -> scheme_object
     = fun op cvt_from cvt_to ->
       U.make_proc (fun ls -> match ls with
           | ( _ :: _ :: _ ) ->
@@ -39,7 +40,7 @@ module Wrappers = struct
     = fun t -> single_arg_procedure
         (fun o -> t o |> U.make_bool |> ok)
 
-  let bool_binop : type a. (scheme_object -> a maybe_exn) -> (a -> a -> bool) -> scheme_object
+  let bool_binop : type a. (scheme_object -> a Err.t) -> (a -> a -> bool) -> scheme_object
     = fun cnv op -> double_arg_procedure
         (fun lhs rhs ->
            cnv lhs >>= fun l ->
@@ -57,7 +58,7 @@ module M = Map.Make(String)
 
 type 'a t = 'a M.t
 
-let lookup : type a. a t -> id -> a maybe_exn
+let lookup : type a. a t -> id -> a Err.t
   = fun env id ->
     match M.find_opt id env with
     | Some r -> ok r

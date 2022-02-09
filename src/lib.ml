@@ -7,6 +7,7 @@
 (*******************************************)
 
 open Types
+open Err
 open Util
 
 (* NOTE library functions should operate on scheme objects
@@ -206,14 +207,27 @@ let close_output_port : scheme_object -> scheme_object maybe_exn
  *       map_m f ls >>| make_list
  *     | other -> error (Type_mismatch ("list?", o)) *)
 
+(* FIXME if a macro expansion causes 'transpose to fail
+ * the error message will be wildly unhelpfull *)
 let transpose ll =
+  let hd = function
+    | [] -> error (Runtime_error ("'transpose: internal hd failure", void))
+    | (h :: _) -> ok h
+  in
+  let tl = function
+    | [] -> error (Runtime_error ("'transpose: internal tl failure", void))
+    | (_ :: tl) -> ok tl
+  in
   let rec transpose' acc = function
-    | [] -> acc
-    | [] :: _ -> acc
+    | [] -> ok acc
+    | [] :: _ -> ok acc
     | m ->
-      transpose' ((List.map List.hd m) :: acc) (List.map List.tl m)
+      map_m hd m >>= fun hds ->
+      map_m tl m >>= fun tls ->
+      transpose' (hds :: acc) tls
   in match ll with
   | S_obj (ListT, List ll) ->
-    map_m unwrap_list ll >>| fun ll ->
-    (List.rev_map make_list (transpose' [] ll) |> make_list)
+    map_m unwrap_list ll >>= fun ll ->
+    transpose' [] ll >>| fun t ->
+    (List.rev_map make_list t |> make_list)
   | other -> error (Type_mismatch ("list?", ll))

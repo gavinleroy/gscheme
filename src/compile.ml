@@ -9,13 +9,11 @@
 (*                                         *)
 (*******************************************)
 
-open struct
-  open Types
-  let ( >>= ),( >>| ) = ( >>= ), ( >>| )
-end
+module Err = Types.Err
 
-let is_or_false =
-  Types.value ~default:false
+open struct
+  let ( >>= ),( >>| ) = Err.( >>= ), Err.( >>| )
+end
 
 let key_to_symbol k =
   Util.make_symbol k
@@ -23,18 +21,18 @@ let key_to_symbol k =
 let local_to_symbol id =
   Scope.resolve id >>= (function
       | None ->
-        Types.error (Types.Bad_form ("bad binding", id))
+        Err.error (Types.Bad_form ("bad binding", id))
       | Some b when Binding.is_local_binding b ->
-        Binding.local_key b |> key_to_symbol |> Types.ok
+        Binding.local_binding_key b |> key_to_symbol |> Err.ok
       | Some _ ->
-        Types.error (Types.Bad_form ("bad binding", id)))
+        Err.error (Types.Bad_form ("bad binding", id)))
 
 let rec compile
   = fun s -> match s with
-    | s when (Syntax.syntax_e s >>| Util.is_pair) |> is_or_false ->
+    | s when (Syntax.syntax_e s >>| Util.is_pair) |> Util.or_false ->
       begin match Core.core_form_sym s with
         | None ->
-          raise (Types.Unexpected ("not a core form", s))
+          raise (Err.Unexpected ("not a core form", s))
 
         | Some "lambda" ->
           let id = Util.make_symbol "id" in
@@ -48,9 +46,9 @@ let rec compile
                  ) >>= fun m ->
           m id >>= fun args -> (* should be a list *)
           if not (Util.is_list args) then
-            Types.error (Types.Type_mismatch ("list?", args))
+            Err.error (Types.Type_mismatch ("list?", args))
           else
-            Types.map_m
+            Err.map_m
               (fun l -> local_to_symbol l >>= Util.unwrap_symbol)
               (Util.unwrap_list_exn args) >>= fun args ->
             m body >>= fun bdy ->
@@ -68,7 +66,7 @@ let rec compile
             Util.(make_dotted ([ make_symbol "#%app" ], rest)
                  ) >>= fun m ->
           m rest >>= Util.unwrap_list >>=
-          Types.map_m compile >>| Util.make_list
+          Err.map_m compile >>| Util.make_list
 
         | Some "quote" ->
           let quote = Util.make_symbol "quote"
@@ -85,26 +83,26 @@ let rec compile
           Util.make_list [ quote; stx ]
 
         | Some core_sym ->
-          Types.error (Types.Bad_form
-                         ("unrecognized core form", Util.make_symbol core_sym))
+          Err.error (Types.Bad_form
+                       ("unrecognized core form", Util.make_symbol core_sym))
       end
 
     | s when Syntax.is_identifier s ->
       Scope.resolve s >>= (function
           | None ->
-            Types.error (Types.Bad_form ("not a reference to a local binding", s))
+            Err.error (Types.Bad_form ("not a reference to a local binding", s))
           | Some b when Binding.is_local_binding b ->
-            Binding.local_key b |> key_to_symbol |> Types.ok
+            Binding.local_binding_key b |> key_to_symbol |> Err.ok
           | Some b when Binding.is_core_binding b ->
-            let sym = Binding.core_sym b |> Util.make_symbol in
+            let sym = Binding.core_binding_sym b |> Util.make_symbol in
             begin match Hashtbl.find_opt Core.core_primitives sym with
-              | None -> raise (Types.Unexpected ("core-binding unbound in namespace", sym))
-              |  Some sym -> Types.ok sym
+              | None -> raise (Err.Unexpected ("core-binding unbound in namespace", sym))
+              |  Some sym -> Err.ok sym
             end
-          | Some other -> raise (Types.Unexpected ("unexpected binding resolution", Types.void)))
+          | Some other -> raise (Err.Unexpected ("unexpected binding resolution", Types.void)))
 
     | other ->
-      Types.error (Types.Bad_form ("bad syntax after expansion", other))
+      Err.error (Types.Bad_form ("bad syntax after expansion", other))
 
 let expand_time_namespace =
   Namespace.base
