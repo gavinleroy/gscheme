@@ -168,6 +168,10 @@ let unwrap_symbol = unwrap_id
 let unwrap_symbol_exn =
   (Err.get_ok <.> unwrap_symbol)
 
+let symbol_is s sym =
+  is_symbol s &&
+  (unwrap_symbol_exn s) = sym
+
 let make_symbol = make_id
 
 (* NOTE in racket keword? -> true when #:... *)

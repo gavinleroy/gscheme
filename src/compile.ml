@@ -35,38 +35,31 @@ let rec compile
           raise (Err.Unexpected ("not a core form", s))
 
         | Some "lambda" ->
-          let id = Util.make_symbol "id" in
-          let body = Util.make_symbol "body" in
+          let lambda = Util.make_symbol "lambda"
+          and id = Util.make_symbol "id"
+          and body = Util.make_symbol "body" in
           Match.match_syntax s
             (* '(lambda (id ...) body) *)
-            Util.(make_list [ make_symbol "lambda"
-                            ; make_list [ id; make_symbol "..."
-                                        ]
-                            ; body ]
-                 ) >>= fun m ->
-          m id >>= fun args -> (* should be a list *)
-          if not (Util.is_list args) then
-            Err.error (Types.Type_mismatch ("list?", args))
-          else
-            Err.map_m
-              (fun l -> local_to_symbol l >>= Util.unwrap_symbol)
-              (Util.unwrap_list_exn args) >>= fun args ->
-            m body >>= fun bdy ->
-            compile bdy >>| fun compiled_bdy ->
-            Util.make_lambda { params = args
-                             ; varargs = None
-                             ; body = [ bdy ]
-                             (* FIXME is the base namespace correct? *)
-                             ; closure = Namespace.base
-                             }
+            Util.(make_list [ lambda
+                            ; make_list [ id; make_symbol "..." ]
+                            ; body ]) >>= fun m ->
+          m id
+          >>= Util.list_map_m local_to_symbol
+          >>= fun args ->
+          m body >>= compile >>| fun compiled_bdy ->
+          Util.(make_list [ lambda
+                          ; args
+                          ; compiled_bdy
+                          ])
 
         | Some "#%app" ->
           let rest = Util.make_symbol "reset" in
           Match.match_syntax s
             Util.(make_dotted ([ make_symbol "#%app" ], rest)
                  ) >>= fun m ->
-          m rest >>= Util.unwrap_list >>=
-          Err.map_m compile >>| Util.make_list
+          m rest >>= Util.unwrap_list
+          >>= Err.map_m compile
+          >>| Util.make_list
 
         | Some "quote" ->
           let quote = Util.make_symbol "quote"

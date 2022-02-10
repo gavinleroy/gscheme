@@ -14,22 +14,32 @@ open Types (* ^ v stop overusing the open *)
 module Scope = S
 open Err
 
+module MacroCompileEnv = Map.Make(Types.Gensym)
+
 type _ Types.scheme_type +=
   | Gensym : Gensym.t scheme_type
   | TransformerT : (scheme_object -> scheme_object Err.t) scheme_type
+  | ExpanderT :
+      (scheme_object
+       -> scheme_object MacroCompileEnv.t
+       -> scheme_object Err.t) scheme_type
 
 type _ Types.scheme_value +=
   | Core_binding : id -> id scheme_value
-  | Core_form : id -> id scheme_value
+  | Core_form :
+      (scheme_object
+       -> scheme_object MacroCompileEnv.t
+       -> scheme_object Err.t)
+      -> (scheme_object
+          -> scheme_object MacroCompileEnv.t
+          -> scheme_object Err.t) Types.scheme_value
+
   | Local_binding : Gensym.t -> Gensym.t Types.scheme_value
-  | Transformer : (scheme_object -> scheme_object maybe_exn)
+  | Transformer :
+      (scheme_object -> scheme_object maybe_exn)
       -> (scheme_object -> scheme_object maybe_exn) Types.scheme_value
   | Variable : unit Types.scheme_value
   | Missing : unit Types.scheme_value
-
-(* include struct
- *   let ( >> ) = TypeslErr.( >> )
- * end *)
 
 let is_core_binding = function
   | S_obj (IdT, Core_binding _) -> true
@@ -37,7 +47,7 @@ let is_core_binding = function
 
 and core_binding_sym = function
   | S_obj (IdT, Core_binding sym) -> sym
-  | _ -> raise (Unexpected ("binding 'core-sym precondition invalidated", Types.void))
+  | _ -> raise (Unexpected ("binding 'core-binding-sym precondition invalidated", Types.void))
 
 let is_local_binding = function
   | S_obj (IdT, Local_binding _) -> true
@@ -45,7 +55,15 @@ let is_local_binding = function
 
 and local_binding_key = function
   | S_obj (IdT, Local_binding key) -> key
-  | _ -> raise (Unexpected ("binding local-key precondition invalidated", Types.void))
+  | _ -> raise (Unexpected ("binding local-binding-key precondition invalidated", Types.void))
+
+and is_core_form = function
+  | S_obj (ExpanderT, Core_form _) -> true
+  | _ -> false
+
+and core_form_expander = function
+  | S_obj (ExpanderT, Core_form t) -> t
+  | _ -> raise (Unexpected ("binding core-form-expander precondition invalidated", Types.void))
 
 let is_eq_free_identifier
   = fun a b ->
@@ -77,8 +95,6 @@ let add_local_binding_bang
 
 (***********************************************************************)
 
-module MacroCompileEnv = Map.Make(Types.Gensym)
-
 let empty_env =
   MacroCompileEnv.empty
 
@@ -91,8 +107,7 @@ let is_variable = function
   | S_obj (VoidT, Variable) -> true
   | _ -> false
 
-let missing =
-  Types.Gensym.gensym ~sym:"missing" ()
+let missing = S_obj (VoidT, Missing)
 
 let is_missing = function
   | S_obj (VoidT, Missing) -> true
@@ -101,6 +116,10 @@ let is_missing = function
 let is_transformer = function
   | S_obj (TransformerT, Transformer _) -> true
   | _ -> false
+
+let unwrap_transformer_exn = function
+  | S_obj (TransformerT, Transformer f) -> f
+  | o -> raise (Err.Unexpected ("'unwrap_transformer_exn precondition broken", o))
 
 (* FIXME ----
  * questionss:
