@@ -39,10 +39,7 @@ let rec compile
           and id = Util.make_symbol "id"
           and body = Util.make_symbol "body" in
           Match.match_syntax s
-            (* '(lambda (id ...) body) *)
-            Util.(make_list [ lambda
-                            ; make_list [ id; make_symbol "..." ]
-                            ; body ]) >>= fun m ->
+            (Match.of_string "(lambda (id ...) body)") >>= fun m ->
           m id
           >>= Util.list_map_m local_to_symbol
           >>= fun args ->
@@ -53,25 +50,28 @@ let rec compile
                           ])
 
         | Some "#%app" ->
-          let rest = Util.make_symbol "reset" in
+          let rest = Util.make_symbol "rest" in
           Match.match_syntax s
-            Util.(make_dotted ([ make_symbol "#%app" ], rest)
-                 ) >>= fun m ->
-          m rest >>= Util.unwrap_list
+            (Match.of_string "#%app . rest") >>= fun m ->
+          m rest
+          >>= Util.unwrap_list
           >>= Err.map_m compile
           >>| Util.make_list
 
         | Some "quote" ->
           let quote = Util.make_symbol "quote"
           and datum = Util.make_symbol "datum" in
-          Match.match_syntax s Util.(make_list [ quote; datum ]) >>= fun m ->
-          m datum >>= Syntax.syntax_to_datum >>| fun dtm ->
+          Match.match_syntax s
+            (Match.of_string "quote datum") >>= fun m ->
+          m datum
+          >>= Syntax.syntax_to_datum >>| fun dtm ->
           Util.make_list [ quote; dtm ]
 
         | Some "quote-syntax" ->
           let quote = Util.make_symbol "quote"
           and datum = Util.make_symbol "datum" in
-          Match.match_syntax s Util.(make_list [ quote; datum ]) >>= fun m ->
+          Match.match_syntax s
+            (Match.of_string "(quote datum)") >>= fun m ->
           m datum >>| fun stx ->
           Util.make_list [ quote; stx ]
 
@@ -87,9 +87,10 @@ let rec compile
           | Some b when Binding.is_local_binding b ->
             Binding.local_binding_key b |> key_to_symbol |> Err.ok
           | Some b when Binding.is_core_binding b ->
-            let sym = Binding.core_binding_sym b |> Util.make_symbol in
+            let sym = Binding.core_binding_sym b in
             begin match Hashtbl.find_opt Core.core_primitives sym with
-              | None -> raise (Err.Unexpected ("core-binding unbound in namespace", sym))
+              | None -> raise (Err.Unexpected
+                                 ("core-binding unbound in namespace", (Util.make_symbol sym)))
               |  Some sym -> Err.ok sym
             end
           | Some other -> raise (Err.Unexpected ("unexpected binding resolution", Types.void)))

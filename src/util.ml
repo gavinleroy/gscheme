@@ -190,6 +190,19 @@ let list_map : (scheme_object -> scheme_object) -> scheme_object -> scheme_objec
       make_list (List.map f ls) |> Err.ok
     | obj -> Err.error (Type_mismatch ("list?", obj))
 
+let list_fold : type a. (a -> scheme_object -> a) -> a -> scheme_object -> a Err.t
+  = fun f init s -> match s with
+    | S_obj (ListT, List ls) ->
+      List.fold_left f init ls |> Err.ok
+    | obj -> Err.error (Type_mismatch ("list?", obj))
+
+let list_fold2 : type a. (a -> scheme_object -> scheme_object -> a) -> a -> scheme_object -> scheme_object -> a Err.t
+  = fun f init s1 s2 -> match s1, s2 with
+    | S_obj (ListT, List ls), S_obj (ListT, List rs) ->
+      List.fold_left2 f init ls rs |> Err.ok
+    | o1, o2 when is_list o2  -> Err.error (Type_mismatch ("list?", o1))
+    | o1, o2 -> Err.error (Type_mismatch ("list?", o2))
+
 let list_map_m : (scheme_object -> scheme_object Err.t) -> scheme_object -> scheme_object Err.t
   = fun f -> function
     | S_obj (ListT, List ls) ->

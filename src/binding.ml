@@ -65,6 +65,9 @@ and core_form_expander = function
   | S_obj (ExpanderT, Core_form t) -> t
   | _ -> raise (Unexpected ("binding core-form-expander precondition invalidated", Types.void))
 
+and make_core_form f =
+  S_obj (ExpanderT, Core_form f)
+
 let is_eq_free_identifier
   = fun a b ->
     let ab = Scope.resolve a |> get_ok |> Option.get
@@ -89,7 +92,7 @@ let add_local_binding_bang
           Syntax.syntax_e id |> get_ok
           |> Util.unwrap_id |> get_ok) () in
       Scope.add_binding_bang id (S_obj (IdT, Local_binding key))
-      >> ok key
+      >> ok (Util.make_symbol key)
     end
 
 
@@ -99,7 +102,9 @@ let empty_env =
   MacroCompileEnv.empty
 
 let env_extend env key vl =
-  MacroCompileEnv.add key vl env
+  if not (Util.is_symbol key) then
+    raise (Unexpected ("binding-env-extend predicate symbol? broken", key))
+  else MacroCompileEnv.add (Util.unwrap_symbol_exn key) vl env
 
 let variable = S_obj (VoidT, Variable)
 

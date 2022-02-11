@@ -22,6 +22,8 @@
           core
           compile
           expander
+          expand_expr
+          expand_main
  )
  (inline_tests)
  (preprocess (pps ppx_inline_test ppx_let)))

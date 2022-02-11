@@ -139,3 +139,11 @@ let try_match_syntax
   = fun orig_s pattern ->
     match_syntax orig_s pattern
     |> to_option
+
+let of_string : string -> scheme_object
+  = fun s ->
+    Parser.scheme_object_of_string s
+    |> Err.get_ok |> function
+    | [ pattern ] -> pattern
+    | others ->
+      raise (Unexpected ("internal pattern has invalid syntax", void))
