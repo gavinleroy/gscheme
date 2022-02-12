@@ -27,13 +27,11 @@ let display_exn e =
 let start () =
 
   let do_eval_print env scm_obj =
-    Eval.eval ~env:env scm_obj |> begin function
-      | Ok (ref_val, env') ->
-        display_result  (Box.get ref_val);
-        env'
+    Eval.eval ~nmspc:env scm_obj |> begin function
+      | Ok ref_val ->
+        display_result  (Box.get ref_val)
       | Error e ->
-        display_exn e;
-        env
+        display_exn e
     end
   in
 
@@ -45,8 +43,8 @@ let start () =
      ***)
     begin match read_line () |> Parser.scheme_object_of_string with
       | Ok asts ->
-        List.fold_left do_eval_print env asts
-        |> loop
+        List.iter (do_eval_print env) asts;
+        loop env
       | Error e ->
         display_exn e;
         loop env
@@ -55,4 +53,4 @@ let start () =
   in
   (* Format.pp_set_geometry ~max_indent:6 ~margin:25 repl_fmt; *)
   Printf.printf "Welcome to GScheme v0.0.1\n";
-  loop Namespace.base
+  loop (Namespace.base ())

@@ -50,7 +50,7 @@ let bind_core_forms () =
          >>= fun trans_keys -> m (Util.make_symbol "trans-rhs")
          >>= Util.list_map_m (fun rhs ->
              (* FIXME by having a function eval, are we going to lose bindings? *)
-             Expander.eval_for_syntax_binding rhs env >>| fun (f, _) -> Box.get f)
+             Expander.eval_for_syntax_binding rhs env >>| Box.get)
          >>= fun trans_vals -> Util.list_fold2 Binding.env_extend env trans_keys trans_vals
          >>= fun body_env -> m (Util.make_symbol "body")
          >>= fun body_m -> Expander.expand (Scope.add_scope body_m sc) body_env);

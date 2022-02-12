@@ -129,10 +129,10 @@ and syntax_record = { e : scheme_object
 and lambda_record = { params : id list
                     ; varargs : id option
                     ; body : scheme_object list
-                    ; closure : dyn_ref_map
+                    ; closure : scheme_object Box.t dyn_ref_map
                     }
 
-and dyn_ref_map = scheme_object Box.t Map.Make(String).t
+and 'a dyn_ref_map = (Identifier.t, 'a) Hashtbl.t list
 
 and port =
   | WritePort of out_channel

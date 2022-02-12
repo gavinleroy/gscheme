@@ -12,6 +12,7 @@
 let register () =
   begin
     Expand_expr.bind_core_forms ();
+
     Core.add_core_primitive_bang
       "syntax-e" Types.void;
 

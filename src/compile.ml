@@ -19,7 +19,8 @@ let key_to_symbol k =
   Util.make_symbol k
 
 let local_to_symbol id =
-  Scope.resolve id >>= (function
+  Scope.resolve id
+  >>= (function
       | None ->
         Err.error (Types.Bad_form ("bad binding", id))
       | Some b when Binding.is_local_binding b ->
@@ -39,11 +40,12 @@ let rec compile
           and id = Util.make_symbol "id"
           and body = Util.make_symbol "body" in
           Match.match_syntax s
-            (Match.of_string "(lambda (id ...) body)") >>= fun m ->
-          m id
+            (Match.of_string "(lambda (id ...) body)")
+          >>= fun m -> m id
           >>= Util.list_map_m local_to_symbol
-          >>= fun args ->
-          m body >>= compile >>| fun compiled_bdy ->
+          >>= fun args -> m body
+          >>= compile
+          >>| fun compiled_bdy ->
           Util.(make_list [ lambda
                           ; args
                           ; compiled_bdy
@@ -52,8 +54,8 @@ let rec compile
         | Some "#%app" ->
           let rest = Util.make_symbol "rest" in
           Match.match_syntax s
-            (Match.of_string "#%app . rest") >>= fun m ->
-          m rest
+            (Match.of_string "#%app . rest")
+          >>= fun m -> m rest
           >>= Util.unwrap_list
           >>= Err.map_m compile
           >>| Util.make_list
@@ -62,17 +64,19 @@ let rec compile
           let quote = Util.make_symbol "quote"
           and datum = Util.make_symbol "datum" in
           Match.match_syntax s
-            (Match.of_string "quote datum") >>= fun m ->
-          m datum
-          >>= Syntax.syntax_to_datum >>| fun dtm ->
+            (Match.of_string "quote datum")
+          >>= fun m -> m datum
+          >>= Syntax.syntax_to_datum
+          >>| fun dtm ->
           Util.make_list [ quote; dtm ]
 
         | Some "quote-syntax" ->
           let quote = Util.make_symbol "quote"
           and datum = Util.make_symbol "datum" in
           Match.match_syntax s
-            (Match.of_string "(quote datum)") >>= fun m ->
-          m datum >>| fun stx ->
+            (Match.of_string "(quote datum)")
+          >>= fun m -> m datum
+          >>| fun stx ->
           Util.make_list [ quote; stx ]
 
         | Some core_sym ->
@@ -81,7 +85,8 @@ let rec compile
       end
 
     | s when Syntax.is_identifier s ->
-      Scope.resolve s >>= (function
+      Scope.resolve s
+      >>= (function
           | None ->
             Err.error (Types.Bad_form ("not a reference to a local binding", s))
           | Some b when Binding.is_local_binding b ->
@@ -99,13 +104,13 @@ let rec compile
       Err.error (Types.Bad_form ("bad syntax after expansion", other))
 
 let expand_time_namespace =
-  Namespace.base
+  Namespace.base ()
 
 let run_time_namespace =
-  Namespace.base
+  Namespace.base ()
 
 let expand_time_eval compiled =
-  Eval.eval compiled ~env:expand_time_namespace
+  Eval.eval compiled ~nmspc:expand_time_namespace
 
 let run_time_eval compiled =
-  Eval.eval compiled ~env:run_time_namespace
+  Eval.eval compiled ~nmspc:run_time_namespace

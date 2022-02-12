@@ -54,99 +54,133 @@ module Wrappers = struct
 
 end
 
-module M = Map.Make(String)
+type 'a t = 'a dyn_ref_map
 
-type 'a t = 'a M.t
+let mx_size = 1000
 
-let lookup : type a. a t -> id -> a Err.t
-  = fun env id ->
-    match M.find_opt id env with
-    | Some r -> ok r
+let fail_no_tables () =
+  raise (Unexpected ("namespace-extend called with an empty list", Types.void))
+
+let lookup : type a. a t -> Identifier.t -> a Err.t
+  = fun nmspc id ->
+    List.find_opt (fun tbl ->
+        Hashtbl.mem tbl id) nmspc
+    |> function
+    | Some tbl ->
+      Hashtbl.find tbl id |> ok
     | None -> error (Free_var id)
 
-let extend env id v =
-  M.add id v env
+let extend : type a. a t -> Identifier.t -> a -> unit
+  = fun nmspc id v ->
+    match nmspc with
+    | [] -> fail_no_tables ()
+    | (tbl :: _) ->
+      Hashtbl.add tbl id v
 
 (* NOTE this function is unsafe as it doesn't report errors on
  *      unbound variables. This should only be called when a function
  *      is bound with variable arguments, but the signature doesn't
  *      enforce security.
  **)
-let extend_many : type a. a t -> id list -> a list -> a t
-  = fun env ids vs ->
-    let rec loop acc is vs = match is,vs with
-      | (i :: is), (v :: vs) ->
-        loop (extend acc i v) is vs
-      | (_ :: _), []
-      | [], []
-      | [], (_ :: _) -> acc
-    in loop env ids vs
+let extend_many : type a. a t -> id list -> a list -> unit
+  = fun nmspc ids vs ->
+    match nmspc with
+    | [] -> fail_no_tables ()
+    | (tbl :: _) ->
+      let rec iter2 is vs = match is, vs with
+        | [], [] | (_ :: _), []
+        | [], (_ :: _) -> ()
+        | (i :: is), (v :: vs) ->
+          Hashtbl.add tbl i v;
+          iter2 is vs
+      in
+      iter2 ids vs
 
-let empty : type a. a t
-  = M.empty
+let empty_table () =
+  Hashtbl.create ~random:false mx_size
+
+let empty : type a. unit -> a t
+  = fun () -> [ empty_table () ]
 
 (* base environment with /eventually/ all the core primitives *)
 
-let base : scheme_object Box.t t
-  = let open Wrappers in
-  let ext = fun id v e -> extend e id (Box.make v) in
-  M.empty
+let base_table () =
+  let open Wrappers in
+  let base = empty_table () in
+  let extend i v = Hashtbl.add base i (Box.make v) in
+  begin
+    extend "boolean?" (predicate U.is_bool);
+    extend "symbol?" (predicate U.is_id);
+    extend "char?" (predicate U.is_char);
+    extend "vector?" (predicate U.is_vector);
+    extend "null?" (predicate U.is_null);
+    extend "pair?" (predicate U.is_pair);
+    extend "number?" (predicate U.is_number);
+    extend "string?" (predicate U.is_string);
+    extend "procedure?" (predicate U.is_func);
+    (* numerical predicates *)
+    extend "integer?" (predicate U.is_integer);
 
-  (* predicates *)
-  |> ext "boolean?" (predicate U.is_bool)
-  |> ext "symbol?" (predicate U.is_id)
-  |> ext "char?" (predicate U.is_char)
-  |> ext "vector?" (predicate U.is_vector)
-  |> ext "null?" (predicate U.is_null)
-  |> ext "pair?" (predicate U.is_pair)
-  |> ext "number?" (predicate U.is_number)
-  |> ext "string?" (predicate U.is_string)
-  |> ext "procedure?" (predicate U.is_func)
-  (* numerical predicates *)
-  |> ext "integer?" (predicate U.is_integer)
+    (* general boolean *)
+    extend "not" (predicate U.is_not);
 
-  (* general boolean *)
-  |> ext "not" (predicate U.is_not)
+    extend "car" (single_arg_procedure Lib.car);
+    extend "cdr" (single_arg_procedure Lib.cdr);
+    extend "caar" (single_arg_procedure Lib.caar);
+    extend "cddr" (single_arg_procedure Lib.cddr);
+    extend "cadr" (single_arg_procedure Lib.cadr);
+    extend "cdar" (single_arg_procedure Lib.cdar);
+    (* Add additional cadr cdar ... *)
+    extend "cons" (double_arg_procedure Lib.cons);
+    extend "list-ref" (double_arg_procedure Lib.list_ref);
 
-  |> ext "car" (single_arg_procedure Lib.car)
-  |> ext "cdr" (single_arg_procedure Lib.cdr)
-  |> ext "caar" (single_arg_procedure Lib.caar)
-  |> ext "cddr" (single_arg_procedure Lib.cddr)
-  |> ext "cadr" (single_arg_procedure Lib.cadr)
-  |> ext "cdar" (single_arg_procedure Lib.cdar)
-  (* Add additional cadr cdar ... *)
-  |> ext "cons" (double_arg_procedure Lib.cons)
-  |> ext "list-ref" (double_arg_procedure Lib.list_ref)
+    extend "make-vector" (U.make_proc Lib.vector_make);
+    extend "vector-ref" (double_arg_procedure Lib.vector_ref);
+    extend "vector-set!" (triple_arg_procedure Lib.vector_set);
 
-  |> ext "make-vector" (U.make_proc Lib.vector_make)
-  |> ext "vector-ref" (double_arg_procedure Lib.vector_ref)
-  |> ext "vector-set!" (triple_arg_procedure Lib.vector_set)
+    extend "+" (min_2_arg_procedure Number.add U.unwrap_num U.make_num);
+    extend "-" (min_2_arg_procedure Number.sub U.unwrap_num U.make_num);
+    extend "*" (min_2_arg_procedure Number.mul U.unwrap_num U.make_num);
+    extend "=" (num_bool_binop Number.equal);
 
-  |> ext "+" (min_2_arg_procedure Number.add U.unwrap_num U.make_num)
-  |> ext "-" (min_2_arg_procedure Number.sub U.unwrap_num U.make_num)
-  |> ext "*" (min_2_arg_procedure Number.mul U.unwrap_num U.make_num)
-  |> ext "=" (num_bool_binop Number.equal)
+    base
+  end
+
+let base : unit -> scheme_object Box.t t
+  = fun () -> [ base_table () ]
+
+let open_scope nmspc =
+  base_table () :: nmspc
+
+let close_scope = function
+  | [] -> fail_no_tables ()
+  | (_ :: rest) -> rest
+
+(* predicates *)
 
 let%test_module _ = (module struct
 
   open Util.Test
 
-  let%test _ = (
-    extend empty "x" 10
-    |> (fun env ->
-        lookup env "x")
-       = Ok 10)
 
-  let%test _ = (extend empty "y" 10
-                |> (fun env -> extend env "x" 0)
-                |> (fun env -> lookup env "y")
-                   = Ok 10)
+  let%test _ = (let nmspc = empty () in
+                extend nmspc "x" 10;
+                lookup nmspc "x"
+                = Ok 10)
 
-  let%test _ = (extend empty "x" 10
-                |> (fun env -> extend env "x" 0)
-                |> (fun env -> lookup env "x")
-                   = Ok 0)
+  let%test _ = (let nmspc = empty () in
+                extend nmspc "y" 10;
+                extend nmspc "x" 0;
+                lookup nmspc "y"
+                = Ok 10)
 
-  let%test _ = (expect_exn (Free_var "")
-                  (lookup empty "y"))
+  let%test _ = (let nmspc = empty () in
+                extend nmspc "x" 10;
+                extend nmspc "x" 0;
+                lookup nmspc "x";
+                = Ok 0)
+
+  let%test _ = (let nmspc = empty () in
+                expect_exn (Free_var "")
+                  (lookup nmspc "y"))
 end)

@@ -12,7 +12,7 @@
 
 (library
  (name gscm)
- (libraries angstrom)
+ (libraries angstrom str)
  (modules eval parser types util namespace box lib ;; expander_old
           ;; The following were added for the new expander
           syntax
