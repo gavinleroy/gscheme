@@ -33,7 +33,7 @@ let rec compile
     | s when (Syntax.syntax_e s >>| Util.is_pair) |> Util.or_false ->
       begin match Core.core_form_sym s with
         | None ->
-          raise (Err.Unexpected ("not a core form", s))
+          Err.error (Types.Bad_form ("not a core form", s))
 
         | Some "lambda" ->
           let lambda = Util.make_symbol "lambda"
@@ -54,7 +54,7 @@ let rec compile
         | Some "#%app" ->
           let rest = Util.make_symbol "rest" in
           Match.match_syntax s
-            (Match.of_string "#%app . rest")
+            (Match.of_string "(#%app . rest)")
           >>= fun m -> m rest
           >>= Util.unwrap_list
           >>= Err.map_m compile
@@ -64,7 +64,7 @@ let rec compile
           let quote = Util.make_symbol "quote"
           and datum = Util.make_symbol "datum" in
           Match.match_syntax s
-            (Match.of_string "quote datum")
+            (Match.of_string "(quote datum)")
           >>= fun m -> m datum
           >>= Syntax.syntax_to_datum
           >>| fun dtm ->

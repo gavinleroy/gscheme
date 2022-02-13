@@ -47,14 +47,21 @@ let rec syntax_to_datum
       >>| U.make_list
     | e -> ok e
 
-and datum_to_syntax
-  = fun stx_c v ->
+and datum_to_syntax : scheme_object option -> scheme_object -> scheme_object
+  = fun stx_c_o v ->
     let wrap e =
       U.make_syntax
-        { e = e; scopes = (syntax_scopes stx_c |> Result.value ~default:Scopes.empty) }
+        { e = e
+        ; scopes =
+            (match stx_c_o with
+             | None -> Scopes.empty
+             | Some stx_c ->
+               (syntax_scopes stx_c
+                |> Err.value ~default:Scopes.empty))
+        }
     in match v with
     | s when U.is_syntax s -> s
     | s when U.is_list s ->
-      (List.map (datum_to_syntax stx_c) (U.unwrap_list_exn s))
+      (List.map (datum_to_syntax stx_c_o) (U.unwrap_list_exn s))
       |> U.make_list |> wrap
     | s -> wrap v

@@ -19,7 +19,7 @@ let lookup b env id =
   Binding.binding_lookup b Core.core_forms env id
 
 let rebuild orig new_s =
-  Syntax.datum_to_syntax orig new_s
+  Syntax.datum_to_syntax (Some orig) new_s
 
 let rec expand s env =
   match s with
@@ -35,7 +35,9 @@ let rec expand s env =
     expand_app s env
 
   | _ ->
-    Util.make_list [ Syntax.datum_to_syntax Core.core_syntax (Util.make_symbol "quote")
+    Util.make_list [ Syntax.datum_to_syntax
+                       (Some Core.core_syntax)
+                       (Util.make_symbol "quote")
                    ; s
                    ] |> rebuild s |> Err.ok
 
@@ -43,13 +45,16 @@ and expand_identifier s env =
   if not (Syntax.is_identifier s) then
     raise (Err.Unexpected ("'expand-identifier called with non-identifier", s));
   Scope.resolve s >>= function
-  | None -> Err.error (Types.Free_var (Util.unwrap_symbol_exn s))
+  | None ->
+    Err.error (Types.Free_var ("", Some s))
   | Some binding ->
     dispatch (lookup binding env s) s env
 
 and expand_id_application_form s env =
-  Syntax.syntax_e s >>= Lib.car >>= fun id ->
-  Scope.resolve id >>= function
+  Syntax.syntax_e s
+  >>= Lib.car
+  >>= fun id -> Scope.resolve id
+  >>= function
   | None ->
     expand_app s env
   | Some binding ->
@@ -59,26 +64,27 @@ and expand_id_application_form s env =
     else dispatch t s env
 
 and expand_app s env =
-  let rator = Util.make_symbol "rator"
-  and app = Util.make_symbol "#%app"
+  let app = Util.make_symbol "#%app"
+  and rator = Util.make_symbol "rator"
   and rand = Util.make_symbol "rand" in
   Match.match_syntax s
-    Util.(make_list [ rator; rand; make_symbol "..."]) >>= fun m ->
-  m rator >>= fun m_rator ->
-  expand m_rator env >>= fun expanded ->
-  m rand >>= fun m_rand ->
-  Util.list_map_m (fun e -> expand e env) m_rand >>= fun rands ->
-  Lib.cons expanded rands >>= fun rands ->
-  Lib.cons
-    (Syntax.datum_to_syntax Core.core_syntax app)
-    rands >>| (rebuild s)
+    (Match.of_string "(rator rand ...)")
+  >>= fun m -> m rator
+  >>= fun m_rator -> expand m_rator env
+  >>= fun expanded -> m rand
+  >>= fun m_rand ->
+  Util.list_map_m (fun e -> expand e env) m_rand
+  >>= (Lib.cons expanded)
+  >>= (Lib.cons (Syntax.datum_to_syntax (Some Core.core_syntax) app))
+  >>| (rebuild s)
 
 and dispatch t s env =
   match t with
   | t when Binding.is_core_form t ->
     (Binding.core_form_expander t) s env
   | t when Binding.is_transformer t ->
-    apply_transformer t s >>= fun transformed ->
+    apply_transformer t s
+    >>= fun transformed ->
     expand transformed env
   | t when Binding.is_variable t ->
     Err.ok s (* variables expand to themselves *)
@@ -92,7 +98,8 @@ and apply_transformer func s =
   let intro_s = Scope.add_scope s intro_scope
   (* |> Util.unwrap_list |> Err.get_ok *)
   in
-  t intro_s >>= fun transformed_s ->
+  t intro_s
+  >>= fun transformed_s ->
   if not (Util.is_syntax transformed_s) then
     Err.error (Types.Bad_form ("transformer produced non-syntax", transformed_s))
   else Scope.flip_scope transformed_s intro_scope |> Err.ok

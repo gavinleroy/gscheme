@@ -110,13 +110,13 @@ type runtime_exn' =
   | Runtime_error of (string * scheme_object)
   | Arity_mismatch of (int * int * scheme_object list)
   | Type_mismatch of (string * scheme_object)
-  | Free_var of string
+  | Free_var of (string * (scheme_object option))
   | Bad_form of (string * scheme_object)
   | Parser of string
 
 and 'a maybe_exn = ('a, runtime_exn') Result.t
 
-and proc_sig = (scheme_object list -> scheme_object maybe_exn)
+and proc_sig = Identifier.t * (scheme_object list -> scheme_object maybe_exn)
 
 and (_, _) eq = Eq : ('a, 'a) eq
 
@@ -126,8 +126,9 @@ and syntax_record = { e : scheme_object
                     ; scopes : Scopes.t
                     }
 
-and lambda_record = { params : id list
-                    ; varargs : id option
+and lambda_record = { name : Identifier.t option
+                    ; params : Identifier.t list
+                    ; varargs : Identifier.t option
                     ; body : scheme_object list
                     ; closure : scheme_object Box.t dyn_ref_map
                     }
@@ -149,8 +150,10 @@ type _ scheme_type +=
   | ListT : scheme_object list scheme_type
   | VecT : scheme_object Vector.t scheme_type
   | DottedT : (scheme_object list * scheme_object) scheme_type
+
   | LambT : lambda_record scheme_type
   | ProcT : proc_sig scheme_type
+
   | PortT : port scheme_type
 
 type _ scheme_value +=

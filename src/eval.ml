@@ -24,20 +24,7 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
 
   | S_obj (IdT, Id id) ->
     Namespace.lookup nmspc id
-    >>= fun b -> kont b
-
-  | S_obj (ListT, List ( S_obj (IdT, Id "list") :: ls )) ->
-    eval_many eval ~nmspc:nmspc ~kont:kont ls
-
-  | S_obj (ListT, List ( S_obj (IdT, Id "vector") :: ls )) ->
-    eval_many eval ~nmspc:nmspc ~kont:(fun boxed_ls ->
-        let v = Box.get boxed_ls
-                |> U.unwrap_list_exn
-                |> Vector.of_list
-                |> U.make_vector
-                |> Box.make
-        in
-        kont v) ls
+    >>= kont
 
   (* different quoting types *)
   | S_obj (ListT, List [ S_obj (IdT, Id "quote"); v]) ->
@@ -86,6 +73,11 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
               end
             | obj -> Err.error (Type_mismatch ("list?", obj))))
 
+  | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym) ]) ->
+    (* reserve a heap location for sym *)
+    Namespace.extend nmspc sym (Box.make void);
+    kont (Box.make void)
+
   | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym); rhs]) ->
     (* reserve a heap location for sym *)
     Namespace.extend nmspc sym (Box.make void);
@@ -104,7 +96,7 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
     Namespace.extend nmspc fname (Box.make void);
     Err.map_m U.unwrap_id params
     >>= fun params ->
-    set_bang nmspc fname (make_fix () nmspc params body) |> Err.get_ok;
+    set_bang nmspc fname (make_fix (Some fname) nmspc params body) |> Err.get_ok;
     kont (Box.make void)
 
   | S_obj (ListT, List (S_obj (IdT, Id "define")
@@ -115,7 +107,7 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
     Err.map_m U.unwrap_id params
     >>= fun params -> U.unwrap_id varargs
     >>= fun va_id ->
-    set_bang nmspc fname (make_va va_id nmspc params body) |> Err.get_ok;
+    set_bang nmspc fname (make_va va_id (Some fname) nmspc params body) |> Err.get_ok;
     kont (Box.make void)
 
   | S_obj (ListT, List (S_obj (IdT, Id "lambda")
@@ -123,7 +115,7 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
                         :: body)) ->
     Err.map_m U.unwrap_id params
     >>= fun params ->
-    kont (make_fix () nmspc params body)
+    kont (make_fix None nmspc params body)
 
   | S_obj (ListT, List (S_obj (IdT, Id "lambda")
                         :: S_obj (DottedT, Dotted
@@ -132,10 +124,10 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
     Err.map_m U.unwrap_id params
     >>= fun params -> U.unwrap_id varargs
     >>= fun vararg ->
-    kont (make_va vararg nmspc params body)
+    kont (make_va vararg None nmspc params body)
 
   | S_obj (ListT, List (S_obj (IdT, Id "lambda") :: S_obj (IdT, Id vararg) :: body)) ->
-    kont (make_va vararg nmspc [] body)
+    kont (make_va vararg None nmspc [] body)
 
   (* function application *)
   | S_obj (ListT, List (S_obj (IdT, Id "#%app") :: func :: args))
@@ -192,7 +184,7 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
       (f |> unwrap_procedure |> Err.get_ok) unboxed_args >>= fun v ->
       Err.ok (Box.make v)
 
-    | S_obj (LambT, Lamb { params; varargs; body; closure }) ->
+    | S_obj (LambT, Lamb { name; params; varargs; body; closure }) ->
       let closure = Namespace.open_scope closure in
       let len = List.length in
       let remaining = List.filteri (fun i _ ->
@@ -225,16 +217,27 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
 (* small helper functions *)
 
 and make_func
-  : string option -> scheme_object Box.t Namespace.t -> id list -> scheme_object list -> scheme_object Box.t
-  = fun va e ps bdy ->
-    U.make_lambda { params = ps
+  : string option
+    -> string option
+    -> scheme_object Box.t Namespace.t
+    -> id list
+    -> scheme_object list
+    -> scheme_object Box.t
+  = fun va nm e ps bdy ->
+    U.make_lambda { name = nm
+                  ; params = ps
                   ; varargs = va
                   ; body = bdy
                   ; closure = e
                   } |> Box.make
 
 and make_va
-  : string -> (scheme_object Box.t Namespace.t -> id list -> scheme_object list -> scheme_object Box.t)
+  : string
+    -> id option
+    -> (scheme_object Box.t Namespace.t
+        -> id list
+        -> scheme_object list
+        -> scheme_object Box.t)
   = fun va -> make_func (Some va)
 
 and set_bang env sym new_ref_v =
@@ -244,7 +247,7 @@ and set_bang env sym new_ref_v =
     ()
   end
 
-and make_fix () = make_func None
+and make_fix name = make_func None name
 
 (* the "id" kontinuation *)
 and final_kont : scheme_object Box.t -> scheme_object Box.t Err.t
@@ -279,7 +282,7 @@ let%test_module _ = (module struct
     = Ok obj)
 
   let%test _ = (
-    expect_exn (Free_var "")
+    expect_exn (Free_var ("", None))
       (let obj = (S_obj (IdT, Id "atom")) in
        eval_to_value (Namespace.empty ()) obj))
 

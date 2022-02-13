@@ -13,29 +13,36 @@ let register () =
   begin
     Expand_expr.bind_core_forms ();
 
-    Core.add_core_primitive_bang
-      "syntax-e" Types.void;
+    (* FIXME TODO below *)
 
-    Core.add_core_primitive_bang
-      "datum->syntax" Types.void;
+    Hashtbl.iter
+      (fun i b -> Core.add_core_primitive_bang i (Box.get b))
+      (Namespace.base_table ());
 
-    Core.add_core_primitive_bang
-      "cons" Types.void;
-
-    Core.add_core_primitive_bang
-      "list" Types.void;
-
-    Core.add_core_primitive_bang
-      "car" Types.void;
-
-    Core.add_core_primitive_bang
-      "cdr" Types.void;
-
-    Core.add_core_primitive_bang
-      "null?" Types.void;
-
-    Core.add_core_primitive_bang
-      "map" Types.void;
+    (* Core.add_core_primitive_bang
+     *   "syntax-e" Types.void;
+     *
+     * Core.add_core_primitive_bang
+     *   "datum->syntax" Types.void;
+     *
+     * Core.add_core_primitive_bang
+     *   "cons" Types.void;
+     *
+     * Core.add_core_primitive_bang
+     *   "list" Types.void;
+     *
+     * Core.add_core_primitive_bang
+     *   "car"
+     *   (Namespace.Wrappers.single_arg_procedure Lib.car);
+     *
+     * Core.add_core_primitive_bang
+     *   "cdr" Types.void;
+     *
+     * Core.add_core_primitive_bang
+     *   "null?" Types.void;
+     *
+     * Core.add_core_primitive_bang
+     *   "map" Types.void; *)
 
   end
 
@@ -44,6 +51,11 @@ let namespace_syntax_introduce s =
 
 let expand s =
   Expander.expand s Binding.empty_env
+
+let expand_expression e =
+  Syntax.datum_to_syntax None e
+  |> namespace_syntax_introduce
+  |> expand
 
 let eval s =
   Compile.run_time_eval s

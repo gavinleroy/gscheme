@@ -196,6 +196,8 @@ let rec scheme_object_of_sexp : sexp -> scheme_object
       begin match scheme_object_of_sexp inner with
         | Types.S_obj (ListT, List values) ->
           S_obj (VecT, Vec (Vector.of_list values))
+        | Types.S_obj (IdT, Id v) ->
+          S_obj (IdT, Id ("#" ^ v))
         | _ -> raise (Err.Unexpected
                         ("Hashed value not supported : " ^ __LOC__,
                          Types.void))

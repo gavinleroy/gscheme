@@ -91,6 +91,9 @@ let cons : scheme_object -> scheme_object -> scheme_object maybe_exn
       make_dotted (x :: ls, tl) |> ok
     | x, y -> make_dotted ([x], y) |> ok
 
+let list : scheme_object list -> scheme_object maybe_exn
+  = fun ls -> make_list ls |> ok
+
 let list_ref : scheme_object -> scheme_object -> scheme_object maybe_exn
   = fun a1 a2 -> match a1, a2 with
     | S_obj (ListT, List ls), S_obj (NumT, Num (Number.Int idx)) ->
@@ -126,6 +129,9 @@ let pair_append : scheme_object -> scheme_object -> scheme_object maybe_exn
     | ls, other when is_list ls ->
       error (Type_mismatch ("pair?", other))
     | ls, _ -> error (Type_mismatch ("list?", ls))
+
+let vector : scheme_object list -> scheme_object maybe_exn
+  = fun ls -> Vector.of_list ls |> make_vector |> ok
 
 let vector_ref : scheme_object -> scheme_object -> scheme_object maybe_exn
   = fun a1 a2 -> match a1, a2 with

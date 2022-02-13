@@ -67,7 +67,7 @@ and unwrap_list : scheme_object -> scheme_object list Err.t
 and unwrap_procedure : scheme_object -> (scheme_object list -> scheme_object Err.t) Err.t
   = fun s ->
     match s with
-    | S_obj (ProcT, Proc f) -> Err.ok f
+    | S_obj (ProcT, Proc (_, f)) -> Err.ok f
     | _ -> Err.error (Type_mismatch ("procedure?", s))
 
 and is_void = function
@@ -210,92 +210,6 @@ let list_map_m : (scheme_object -> scheme_object Err.t) -> scheme_object -> sche
     | obj -> Err.error (Type_mismatch ("list?", obj))
 
 (* Formatting utilities *)
-
-let rec format_scheme_obj
-  = fun fmt s ->
-    let open Format in
-    let open Types in
-    let rec fso fmt s = match s with
-      | s when is_void s ->
-        fprintf fmt "#<void>"
-      | s when is_func s ->
-        fprintf fmt "#<procedure>" (* TODO add name if named ... *)
-      | S_obj (BoolT, Bool true) ->
-        fprintf fmt "#t"
-      | S_obj (BoolT, Bool false) ->
-        fprintf fmt "#f"
-      | S_obj (StringT, String s) ->
-        fprintf fmt "\"%s\"" s
-      | S_obj (IdT, Id s) ->
-        fprintf fmt "%s" s
-      | S_obj (NumT, Num (Number.Int i)) ->
-        fprintf fmt "%Li" i
-      | S_obj (StxT, Stx s) ->
-        fprintf fmt "#<syntax %a>"
-          fso s.e
-      (* different quoted forms *)
-      | S_obj (ListT, List [S_obj (IdT, Id "quote"); rhs]) ->
-        fprintf fmt "'%a" fso rhs
-      | S_obj (ListT, List [S_obj (IdT, Id "quasiquote"); rhs]) ->
-        fprintf fmt "`%a" fso rhs
-      | S_obj (ListT, List [S_obj (IdT, Id "unquote"); rhs]) ->
-        fprintf fmt ",%a" fso rhs
-      | S_obj (ListT, List ls) ->
-        fprintf fmt "(%a)"
-          (pp_print_list ~pp_sep:pp_print_space fso)
-          ls
-      | S_obj (VecT, Vec vector) ->
-        fprintf fmt "#(%a)"
-          (pp_print_list ~pp_sep:pp_print_space fso)
-          (Vector.to_list vector)
-      | S_obj (DottedT, Dotted (ls, tl)) ->
-        fprintf fmt "(%a . %a)"
-          (pp_print_list ~pp_sep:pp_print_space
-             fso) ls
-          fso tl
-      | _ -> raise (Err.Unexpected ("fmt_scheme_object unexpected object", void))
-    in fprintf fmt "%a" fso s
-
-(* I'm not very familiar with the Format module but I believe the <2>
- * within the nested boxes are unnecessary for indentations.
- ***)
-(* FIXME the XXX within the messages should represent scope e.g. a function name *)
-and format_runtime_exn
-  = fun fmt exc ->
-    let open Format in
-    let open Types in
-    let ind fmt s = match s with
-      | Runtime_error (msg, id) ->
-        fprintf fmt "@[<v 2>%s: %s;@,%s@,error identifier: %a@]"
-          "XXX" "runtime error" msg
-          format_scheme_obj id
-
-      | Arity_mismatch (expected, given, objs) ->
-        fprintf fmt "@[<v 2>%s: %s;@,expected: %d@,given: %d@,args: %a@]"
-          "XXX" "arity mismatch"
-          expected given
-          (pp_print_list ~pp_sep:pp_print_space format_scheme_obj) objs
-
-      | Type_mismatch (contract, obj) ->
-        fprintf fmt "@[<v 2>%s: %s;@,predicate: %s@,unsatisfied by: %a@]"
-          "XXX" "contract violation"
-          contract
-          format_scheme_obj obj
-
-      | Free_var var ->
-        fprintf fmt "@[<v 2>%s: %s;@,%s@]"
-          var "undefined"
-          "cannot reference an identifier before its definition"
-
-      | Bad_form (msg, obj) ->
-        fprintf fmt "@[<v 2>%s:@ %s;@,%s;@,found at: %a@]"
-          "XXX" "bad form" msg
-          format_scheme_obj obj
-
-      | Parser str ->
-        fprintf fmt "@[<v 2>%s: %s;@]@,@[<v 2>%s@]"
-          "XXX" "syntax error" str
-    in fprintf fmt "@[<v 2>%a@]" ind exc
 
 module Test = struct
 
