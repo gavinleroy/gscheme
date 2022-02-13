@@ -42,7 +42,7 @@ let bind_core_forms () =
       "let-syntax"
       (fun s env ->
          Match.match_syntax s
-           (Match.of_string "let-syntax ((trans-id trans-rhs) ...) body")
+           (Match.of_string "(let-syntax ((trans-id trans-rhs) ...) body)")
          >>= fun m -> let sc = Scope.fresh () in
          m (Util.make_symbol "trans-rhs")
          >>= Util.list_map (fun id -> Scope.add_scope id sc)
