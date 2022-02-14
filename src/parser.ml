@@ -194,6 +194,8 @@ let rec scheme_object_of_sexp : sexp -> scheme_object
       end
     | SexpHash inner ->
       begin match scheme_object_of_sexp inner with
+        | Types.S_obj (ListT, List (Types.S_obj (IdT, Id "quote") :: values)) ->
+          Types.S_obj (ListT, List (Types.S_obj (IdT, Id "quote-syntax") :: values))
         | Types.S_obj (ListT, List values) ->
           S_obj (VecT, Vec (Vector.of_list values))
         | Types.S_obj (IdT, Id v) ->

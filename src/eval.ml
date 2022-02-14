@@ -137,8 +137,8 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
         eval_many eval args ~nmspc:nmspc ~kont:(fun box_results ->
             let results = Box.get box_results
                           |> U.unwrap_list_exn in
-            apply (Box.get box_f) results >>= fun box_v ->
-            kont box_v))
+            apply (Box.get box_f) results
+            >>= fun box_v -> kont box_v))
   | v -> raise (Err.Unexpected (__LOC__, void))
 
 and eval_unquoted ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =

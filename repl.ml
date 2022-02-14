@@ -12,13 +12,27 @@ open struct
   let ( >>= ) = Types.Err.( >>= )
 end
 
+let rec list_remove a = function
+  | [] -> []
+  | (a' :: ass) ->
+    if a = a' then
+      list_remove a ass
+    else a :: (list_remove a ass)
+
 let repl_fmt = Format.std_formatter
 
 let format_scheme_obj
   = fun fmt s ->
     let open Format in
     let open Types in
-    let rec fso fmt s = match s with
+    (* NOTE attributes can be used to indicate that the object being printed
+     * is nested within a certain environment.
+     **)
+    let rec fso attributes fmt s =
+      let recur = fso attributes
+      and recur_with a = fso (a :: attributes)
+      and recur_without a = fso (list_remove a attributes) in
+      match s with
       | s when Util.is_void s ->
         fprintf fmt "#<void>"
       | S_obj (LambT, Lamb rc) ->
@@ -37,30 +51,31 @@ let format_scheme_obj
       | S_obj (NumT, Num (Number.Int i)) ->
         fprintf fmt "%Li" i
       | S_obj (StxT, Stx s) ->
-        fprintf fmt "#<syntax %a>"
-          fso s.e
+        if List.mem `Syntax attributes then
+          fprintf fmt "%a" recur s.e
+        else fprintf fmt "#<syntax %a>" (recur_with `Syntax) s.e
       (* different quoted forms *)
       | S_obj (ListT, List [S_obj (IdT, Id "quote"); rhs]) ->
-        fprintf fmt "'%a" fso rhs
+        fprintf fmt "'%a" (recur_with `Quote) rhs
       | S_obj (ListT, List [S_obj (IdT, Id "quasiquote"); rhs]) ->
-        fprintf fmt "`%a" fso rhs
+        fprintf fmt "`%a" (recur_with `Quote) rhs
       | S_obj (ListT, List [S_obj (IdT, Id "unquote"); rhs]) ->
-        fprintf fmt ",%a" fso rhs
+        fprintf fmt ",%a" (recur_without `Quote) rhs
       | S_obj (ListT, List ls) ->
         fprintf fmt "(%a)"
-          (pp_print_list ~pp_sep:pp_print_space fso)
+          (pp_print_list ~pp_sep:pp_print_space recur)
           ls
       | S_obj (VecT, Vec vector) ->
         fprintf fmt "#(%a)"
-          (pp_print_list ~pp_sep:pp_print_space fso)
+          (pp_print_list ~pp_sep:pp_print_space recur)
           (Vector.to_list vector)
       | S_obj (DottedT, Dotted (ls, tl)) ->
         fprintf fmt "(%a . %a)"
           (pp_print_list ~pp_sep:pp_print_space
-             fso) ls
-          fso tl
+             recur) ls
+          recur tl
       | _ -> raise (Err.Unexpected ("fmt_scheme_object unexpected object", void))
-    in fprintf fmt "%a" fso s
+    in fprintf fmt "%a" (fso []) s
 
 (* I'm not very familiar with the Format module but I believe the <2>
  * within the nested boxes are unnecessary for indentations.
