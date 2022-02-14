@@ -33,10 +33,11 @@ let bind_core_forms () =
          >>= fun body_env -> m (Util.make_symbol "body")
          >>= fun body_m -> Expander.expand (Scope.add_scope body_m sc) body_env
          >>= fun exp_body -> m (Util.make_symbol "lambda")
-         >>| fun lambda_m -> Util.make_list [ lambda_m
-                                            ; ids
-                                            ; exp_body
-                                            ]);
+         >>| fun lambda_m -> Expander.rebuild
+           s (Util.make_list [ lambda_m
+                             ; ids
+                             ; exp_body
+                             ]));
 
     Core.add_core_form_bang
       "let-syntax"
@@ -49,7 +50,6 @@ let bind_core_forms () =
          >>= fun trans_ids -> Util.list_map_m Binding.add_local_binding_bang trans_ids
          >>= fun trans_keys -> m (Util.make_symbol "trans-rhs")
          >>= Util.list_map_m (fun rhs ->
-             (* FIXME by having a function eval, are we going to lose bindings? *)
              Expander.eval_for_syntax_binding rhs env >>| Box.get)
          >>= fun trans_vals -> Util.list_fold2 Binding.env_extend env trans_keys trans_vals
          >>= fun body_env -> m (Util.make_symbol "body")

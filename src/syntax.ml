@@ -50,18 +50,25 @@ let rec syntax_to_datum
 and datum_to_syntax : scheme_object option -> scheme_object -> scheme_object
   = fun stx_c_o v ->
     let wrap e =
+      let scopes =
+        match stx_c_o with
+        | None -> Scopes.empty
+        | Some stx_c ->
+          (syntax_scopes stx_c
+           |> function
+           | Ok o -> o
+           | Error _ ->
+             raise (Err.Unexpected
+                      ("'datum->syntax called with a non-syntax object", stx_c)))
+      in
       U.make_syntax
         { e = e
-        ; scopes =
-            (match stx_c_o with
-             | None -> Scopes.empty
-             | Some stx_c ->
-               (syntax_scopes stx_c
-                |> Err.value ~default:Scopes.empty))
+        ; scopes = scopes
         }
     in match v with
     | s when U.is_syntax s -> s
     | s when U.is_list s ->
-      (List.map (datum_to_syntax stx_c_o) (U.unwrap_list_exn s))
-      |> U.make_list |> wrap
-    | s -> wrap v
+      Util.list_map (datum_to_syntax stx_c_o) s
+      |> Err.get_ok (* NOTE datum->syntax is a safe function*)
+      |> wrap
+    | s -> wrap s
