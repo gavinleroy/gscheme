@@ -35,11 +35,11 @@ let rec expand s env =
     expand_app s env
 
   | _ ->
-    Util.make_list [ Syntax.datum_to_syntax
-                       (Some Core.core_syntax)
-                       (Util.make_symbol "quote")
-                   ; s
-                   ] |> rebuild s |> Err.ok
+    Syntax.datum_to_syntax
+      (Some Core.core_syntax)
+      (Util.make_symbol "quote")
+    >>= fun stx ->
+    rebuild s (Util.make_list [ stx; s ])
 
 and expand_identifier s env =
   if not (Syntax.is_identifier s) then
@@ -73,10 +73,12 @@ and expand_app s env =
   >>= fun m_rator -> expand m_rator env
   >>= fun expanded -> m rand
   >>= fun m_rand ->
+  (Syntax.datum_to_syntax (Some Core.core_syntax) app)
+  >>= fun stx ->
   Util.list_map_m (fun e -> expand e env) m_rand
   >>= (Lib.cons expanded)
-  >>= (Lib.cons (Syntax.datum_to_syntax (Some Core.core_syntax) app))
-  >>| (rebuild s)
+  >>= (Lib.cons stx)
+  >>= (rebuild s)
 
 and dispatch t s env =
   match t with

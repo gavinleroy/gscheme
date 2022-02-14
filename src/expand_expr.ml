@@ -33,7 +33,7 @@ let bind_core_forms () =
          >>= fun body_env -> m (Util.make_symbol "body")
          >>= fun body_m -> Expander.expand (Scope.add_scope body_m sc) body_env
          >>= fun exp_body -> m (Util.make_symbol "lambda")
-         >>| fun lambda_m -> Expander.rebuild
+         >>= fun lambda_m -> Expander.rebuild
            s (Util.make_list [ lambda_m
                              ; ids
                              ; exp_body

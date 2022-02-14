@@ -33,9 +33,10 @@ let unwrap_sym_exn s =
 
 let add_core_binding_bang : Types.Identifier.t -> unit
   = fun sym ->
-    Scope.add_binding_bang
-      (Syntax.datum_to_syntax (Some core_syntax) (Util.make_symbol sym))
-      (S_obj (Types.IdT, Binding.Core_binding sym))
+    (Syntax.datum_to_syntax (Some core_syntax) (Util.make_symbol sym))
+    >>= (fun stx ->
+        Scope.add_binding_bang stx
+          (S_obj (Types.IdT, Binding.Core_binding sym)))
     |> Err.get_ok
 
 let add_core_form_bang

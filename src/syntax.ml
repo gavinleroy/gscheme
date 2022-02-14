@@ -11,6 +11,10 @@ module U = Util
 
 type t = syntax_record
 
+open struct
+  let ( >>= ), ( >>| ) = Err.( >>= ), Err.( >>| )
+end
+
 let syntax_e : scheme_object -> scheme_object maybe_exn
   = function
     | S_obj (StxT, Stx r) -> Err.ok r.e
@@ -40,35 +44,29 @@ let is_eq_bound_identifier : scheme_object -> scheme_object -> bool
                end
 
 let rec syntax_to_datum
-  = fun s -> let open Err in
-    syntax_e s >>= function
+  = fun s ->
+    syntax_e s
+    >>= function
     | e when U.is_list e ->
-      map_m syntax_to_datum (U.unwrap_list_exn e)
+      Err.map_m syntax_to_datum (U.unwrap_list_exn e)
       >>| U.make_list
-    | e -> ok e
+    | e -> Err.ok e
 
-and datum_to_syntax : scheme_object option -> scheme_object -> scheme_object
+and datum_to_syntax : scheme_object option -> scheme_object -> scheme_object maybe_exn
   = fun stx_c_o v ->
     let wrap e =
-      let scopes =
-        match stx_c_o with
-        | None -> Scopes.empty
-        | Some stx_c ->
-          (syntax_scopes stx_c
-           |> function
-           | Ok o -> o
-           | Error _ ->
-             raise (Err.Unexpected
-                      ("'datum->syntax called with a non-syntax object", stx_c)))
-      in
+      (match stx_c_o with
+       | None -> Err.ok Scopes.empty
+       | Some stx_c -> syntax_scopes stx_c)
+      >>| fun scopes ->
       U.make_syntax
         { e = e
         ; scopes = scopes
         }
     in match v with
-    | s when U.is_syntax s -> s
+    | s when U.is_syntax s ->
+      Err.ok s
     | s when U.is_list s ->
-      Util.list_map (datum_to_syntax stx_c_o) s
-      |> Err.get_ok (* NOTE datum->syntax is a safe function*)
-      |> wrap
+      Util.list_map_m (datum_to_syntax stx_c_o) s
+      >>= wrap
     | s -> wrap s

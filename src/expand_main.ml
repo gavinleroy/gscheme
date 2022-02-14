@@ -12,37 +12,24 @@
 let register () =
   begin
     Expand_expr.bind_core_forms ();
-
-    (* FIXME TODO below *)
-
     Hashtbl.iter
       (fun i b -> Core.add_core_primitive_bang i (Box.get b))
       (Namespace.base_table ());
 
-    (* Core.add_core_primitive_bang
-     *   "syntax-e" Types.void;
-     *
-     * Core.add_core_primitive_bang
-     *   "datum->syntax" Types.void;
-     *
-     * Core.add_core_primitive_bang
-     *   "cons" Types.void;
-     *
-     * Core.add_core_primitive_bang
-     *   "list" Types.void;
-     *
-     * Core.add_core_primitive_bang
-     *   "car"
-     *   (Namespace.Wrappers.single_arg_procedure Lib.car);
-     *
-     * Core.add_core_primitive_bang
-     *   "cdr" Types.void;
-     *
-     * Core.add_core_primitive_bang
-     *   "null?" Types.void;
-     *
-     * Core.add_core_primitive_bang
-     *   "map" Types.void; *)
+    Core.add_core_primitive_bang
+      "syntax-e"
+      (Namespace.Wrappers.single_arg_procedure Syntax.syntax_e
+       |> fun f -> Util.make_proc ("syntax-e", f));
+
+    (* The current version of datum->syntax
+       is not  well supported for exposing to
+       clients. *)
+    Core.add_core_primitive_bang
+      "datum->syntax"
+      (Namespace.Wrappers.double_arg_procedure
+         (fun ctx v ->
+            Syntax.datum_to_syntax (Some ctx) v)
+       |> fun f -> Util.make_proc ("datum->syntax", f));
 
   end
 
@@ -54,6 +41,7 @@ let expand s =
 
 let expand_expression e =
   Syntax.datum_to_syntax None e
+  |> Types.Err.get_ok
   |> namespace_syntax_introduce
   |> expand
 
@@ -69,3 +57,9 @@ and syntax_to_datum = Syntax.syntax_to_datum
 and is_eq_bound_identifier = Syntax.is_eq_bound_identifier
 and compile = Compile.compile
 (* and syntax_property = ... *)
+
+let%test_module _ = (module struct
+
+
+
+end)
