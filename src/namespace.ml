@@ -96,6 +96,10 @@ let extend_many : type a. a t -> id list -> a list -> unit
       in
       iter2 ids vs
 
+let extend_many_unboxed
+  = fun nmspc ids vs ->
+    extend_many nmspc ids (List.map Box.make vs)
+
 let empty_table () =
   Hashtbl.create ~random:false mx_size
 

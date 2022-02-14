@@ -18,7 +18,6 @@ module MacroCompileEnv = Map.Make(Types.Gensym)
 
 type _ Types.scheme_type +=
   | Gensym : Gensym.t scheme_type
-  | TransformerT : (scheme_object -> scheme_object Err.t) scheme_type
   | ExpanderT :
       (scheme_object
        -> scheme_object MacroCompileEnv.t
@@ -35,9 +34,6 @@ type _ Types.scheme_value +=
           -> scheme_object Err.t) Types.scheme_value
 
   | Local_binding : Gensym.t -> Gensym.t Types.scheme_value
-  | Transformer :
-      (scheme_object -> scheme_object maybe_exn)
-      -> (scheme_object -> scheme_object maybe_exn) Types.scheme_value
   | Variable : unit Types.scheme_value
   | Missing : unit Types.scheme_value
 
@@ -95,7 +91,6 @@ let add_local_binding_bang
       >> ok (Util.make_symbol key)
     end
 
-
 (***********************************************************************)
 
 let empty_env =
@@ -119,12 +114,13 @@ let is_missing = function
   | _ -> false
 
 let is_transformer = function
-  | S_obj (TransformerT, Transformer _) -> true
+  (* | S_obj (TransformerT, Transformer _) -> true *)
+  | o when Util.is_func o -> true
   | _ -> false
 
-let unwrap_transformer_exn = function
-  | S_obj (TransformerT, Transformer f) -> f
-  | o -> raise (Err.Unexpected ("'unwrap_transformer_exn precondition broken", o))
+(* let unwrap_transformer_exn = function
+ *   | S_obj (TransformerT, Transformer f) -> f
+ *   | o -> raise (Err.Unexpected ("'unwrap_transformer_exn precondition broken", o)) *)
 
 (* FIXME ----
  * questionss:

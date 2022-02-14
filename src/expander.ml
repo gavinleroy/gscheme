@@ -89,16 +89,13 @@ and dispatch t s env =
   | t when Binding.is_variable t ->
     Err.ok s (* variables expand to themselves *)
   | other ->
-    (* FIXME make a printer for the binding_variant so these will be displayed to the user *)
     Err.error (Types.Bad_form ("illegal use of syntax", other))
 
-and apply_transformer func s =
-  let t = Binding.unwrap_transformer_exn func in
+and apply_transformer t s =
   let intro_scope = Scope.fresh () in
-  let intro_s = Scope.add_scope s intro_scope
-  (* |> Util.unwrap_list |> Err.get_ok *)
-  in
-  t intro_s
+  let intro_s = Scope.add_scope s intro_scope in
+  Eval.apply t [ intro_s ]
+  >>| Box.get
   >>= fun transformed_s ->
   if not (Util.is_syntax transformed_s) then
     Err.error (Types.Bad_form ("transformer produced non-syntax", transformed_s))

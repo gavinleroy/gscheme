@@ -94,7 +94,7 @@ let format_runtime_exn
           "cannot reference an identifier before its definition"
 
       | Free_var (var, Some obj) ->
-        fprintf fmt "@[<v 2>%s: %s;@,%s@ : %a]"
+        fprintf fmt "@[<v 2>%s: %s;@,%s@,%a@]"
           var "undefined"
           "cannot reference an identifier before its definition"
           format_scheme_obj obj
@@ -178,7 +178,7 @@ let start () =
     end
 
   in
-  (* Format.pp_set_geometry ~max_indent:6 ~margin:25 repl_fmt; *)
+  Format.pp_set_geometry ~max_indent:6 ~margin:25 repl_fmt;
   Printf.printf "Welcome to GScheme v0.0.1\n";
   Expand_main.register ();
   loop ()

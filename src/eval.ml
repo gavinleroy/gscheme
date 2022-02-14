@@ -61,7 +61,7 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
               begin
                 eval_many eval ls ~nmspc:nmspc ~kont:(fun boxed_ls ->
                     let ls_vals = Box.get boxed_ls |> U.unwrap_list_exn in
-                    List.map (fun l -> apply box_f [ Box.make l ]) ls_vals
+                    List.map (fun l -> apply (Box.get box_f) [ l ]) ls_vals
                     |> (fun bs ->
                         List.fold_right (fun mv acc ->
                             acc
@@ -136,9 +136,8 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
     eval func ~nmspc:nmspc ~kont:(fun box_f ->
         eval_many eval args ~nmspc:nmspc ~kont:(fun box_results ->
             let results = Box.get box_results
-                          |> U.unwrap_list_exn
-                          |> List.map Box.make in
-            apply box_f results >>= fun box_v ->
+                          |> U.unwrap_list_exn in
+            apply (Box.get box_f) results >>= fun box_v ->
             kont box_v))
   | v -> raise (Err.Unexpected (__LOC__, void))
 
@@ -176,19 +175,18 @@ and eval_many ?(nmspc = Namespace.base ()) ?(kont = final_kont) evaluator es =
           loop ((Box.get box_res) :: acc) es nmspc k)
   in loop [] es nmspc kont
 
-and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box.t maybe_exn
+and apply : scheme_object -> scheme_object list -> scheme_object Box.t maybe_exn
   = fun f args -> let open U in
-    let unboxed_args = List.map Box.get args in
-    match Box.get f with
+    match f with
     | f when is_procedure f ->
-      (f |> unwrap_procedure |> Err.get_ok) unboxed_args >>= fun v ->
-      Err.ok (Box.make v)
+      (f |> unwrap_procedure |> Err.get_ok) args
+      >>= fun v -> Err.ok (Box.make v)
 
     | S_obj (LambT, Lamb { name; params; varargs; body; closure }) ->
       let closure = Namespace.open_scope closure in
       let len = List.length in
       let remaining = List.filteri (fun i _ ->
-          len params <= i) unboxed_args
+          len params <= i) args
                       |> make_list |> Box.make
       in
       let bind_var_args a e = match a with
@@ -199,15 +197,14 @@ and apply : scheme_object Box.t -> scheme_object Box.t list -> scheme_object Box
       in
       begin match len params, len args with
         | lps, las when lps > las ->
-          Err.error (Arity_mismatch (lps, las, unboxed_args))
+          Err.error (Arity_mismatch (lps, las, args))
         | lps, las when lps <> las && Option.is_none varargs ->
-          Err.error (Arity_mismatch (lps, las, unboxed_args))
+          Err.error (Arity_mismatch (lps, las, args))
         | lps, las ->
           begin
-            Namespace.extend_many closure params args;
+            Namespace.extend_many_unboxed closure params args;
             bind_var_args varargs closure
-            |> fun e ->
-            eval_many eval ~nmspc:e body
+            |> fun e -> eval_many eval ~nmspc:e body
             >>| (Box.make <.> List.last <.> U.unwrap_list_exn <.> Box.get)
           end
       end

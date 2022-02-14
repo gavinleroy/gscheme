@@ -45,12 +45,13 @@ let bind_core_forms () =
          Match.match_syntax s
            (Match.of_string "(let-syntax ((trans-id trans-rhs) ...) body)")
          >>= fun m -> let sc = Scope.fresh () in
-         m (Util.make_symbol "trans-rhs")
+         m (Util.make_symbol "trans-id")
          >>= Util.list_map (fun id -> Scope.add_scope id sc)
          >>= fun trans_ids -> Util.list_map_m Binding.add_local_binding_bang trans_ids
          >>= fun trans_keys -> m (Util.make_symbol "trans-rhs")
          >>= Util.list_map_m (fun rhs ->
-             Expander.eval_for_syntax_binding rhs env >>| Box.get)
+             Expander.eval_for_syntax_binding rhs env
+             >>| Box.get)
          >>= fun trans_vals -> Util.list_fold2 Binding.env_extend env trans_keys trans_vals
          >>= fun body_env -> m (Util.make_symbol "body")
          >>= fun body_m -> Expander.expand (Scope.add_scope body_m sc) body_env);
