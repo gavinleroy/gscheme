@@ -9,6 +9,10 @@
 (*                                         *)
 (*******************************************)
 
+open struct
+  let ( >>| ) = Types.Err.( >>| )
+end
+
 let register () =
   begin
     Expand_expr.bind_core_forms ();
@@ -46,7 +50,7 @@ let expand_expression e =
   |> expand
 
 let eval s =
-  Compile.run_time_eval s
+  Compile.run_time_eval s >>| Box.get
 
 (* provide the following externally *)
 

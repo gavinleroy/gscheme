@@ -8,16 +8,11 @@
 
 open Gscm
 
-open struct
-  let ( >>= ) = Types.Err.( >>= )
-end
+module List = Util.List
 
-let rec list_remove a = function
-  | [] -> []
-  | (a' :: ass) ->
-    if a = a' then
-      list_remove a ass
-    else a :: (list_remove a ass)
+open struct
+  let ( >>= ), ( >>=? ) = Types.Err.( >>= ), Types.Err.( >>=? )
+end
 
 let repl_fmt = Format.std_formatter
 
@@ -31,7 +26,7 @@ let format_scheme_obj
     let rec fso attributes fmt s =
       let recur = fso attributes
       and recur_with a = fso (a :: attributes)
-      and recur_without a = fso (list_remove a attributes) in
+      and recur_without a = fso (List.remove a attributes) in
       match s with
       | s when Util.is_void s ->
         fprintf fmt "#<void>"
@@ -161,14 +156,13 @@ let start () =
 
   let do_eval_print scm_obj =
     try
-      Expand_main.expand_expression scm_obj
-      >>= Expand_main.compile
-      (* >>= Expand_main.eval *)
+      (Expand_main.expand_expression scm_obj
+       >>= Expand_main.compile
+       >>=? (Cfg.is_eval_all ()))
+        Expand_main.eval
       |> begin function
-        | Ok ref_val ->
-          display_result ref_val
-        (* Box.get ref_val
-         * |> display_result *)
+        | Ok vl ->
+          display_result vl
         | Error e ->
           display_exn e
       end
@@ -196,4 +190,5 @@ let start () =
   Format.pp_set_geometry ~max_indent:6 ~margin:25 repl_fmt;
   Printf.printf "Welcome to GScheme v0.0.1\n";
   Expand_main.register ();
+  Cfg.turn_eval_off (); (* FIXME remove after testing *)
   loop ()

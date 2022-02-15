@@ -198,6 +198,9 @@ module Err : sig
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
   val ( >> ) : 'a t -> 'c t -> 'c t
   val map_m : ('a -> 'b t) -> 'a list -> 'b list t
+  (* exotic binds *)
+  val ( >>=? ) : 'a t -> bool -> ('a -> 'a t) -> 'a t
+  val ( >>|? ) : 'a t -> bool -> ('a -> 'a) -> 'a t
 
 end = struct
 
@@ -233,4 +236,15 @@ end = struct
                     ok (v :: acc_ls)))) (ok [])) ls
       >>= (fun l -> List.rev l |> ok)
 
+  let ( >>=? ) lhv maybe rhf =
+    lhv >>= (fun a ->
+        if maybe then
+          rhf a
+        else ok a)
+
+  let ( >>|? ) lhv maybe rhf =
+    lhv >>| (fun a ->
+        if maybe then
+          rhf a
+        else a)
 end

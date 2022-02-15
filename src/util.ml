@@ -22,6 +22,12 @@ let compose = (<.>)
 module List = struct
   include List
 
+  let remove a ls =
+    List.fold_right (fun a' acc ->
+        if a = a' then
+          acc
+        else a :: acc) ls []
+
   let foldl1 : type a. (a -> a -> a) -> a list -> a
     = fun f l ->
       match l with
