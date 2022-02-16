@@ -13,7 +13,7 @@
 (library
  (name gscm)
  (libraries angstrom str)
- (modules eval parser types util namespace box lib cfg
+ (modules eval parser types util namespace box lib cfg terminal
           ;; The following were added for the new expander
           syntax
           scope
