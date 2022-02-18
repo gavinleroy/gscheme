@@ -95,9 +95,9 @@ and dispatch t s env =
 
 and apply_transformer t s =
   let intro_scope = Scope.fresh () in
-  let intro_s = Scope.add_scope s intro_scope in
-  Eval.apply t [ intro_s ]
-  >>| Box.get
+  let intro_s = Scope.add_scope s intro_scope
+                |> fun s -> [ s ] |> Util.make_list in
+  Lib.apply t intro_s
   >>= fun transformed_s ->
   if not (Util.is_syntax transformed_s) then
     Err.error (Types.Bad_form ("transformer produced non-syntax", transformed_s))

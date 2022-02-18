@@ -116,7 +116,7 @@ type runtime_exn' =
 
 and 'a maybe_exn = ('a, runtime_exn') Result.t
 
-and proc_sig = Identifier.t * (scheme_object list -> scheme_object maybe_exn)
+and proc_sig = (Identifier.t option) * (scheme_object list -> scheme_object maybe_exn)
 
 and (_, _) eq = Eq : ('a, 'a) eq
 
@@ -124,13 +124,6 @@ and scheme_object = S_obj : 'a scheme_type * 'a scheme_value -> scheme_object
 
 and syntax_record = { e : scheme_object
                     ; scopes : Scopes.t
-                    }
-
-and lambda_record = { name : Identifier.t option
-                    ; params : Identifier.t list
-                    ; varargs : Identifier.t option
-                    ; body : scheme_object list
-                    ; closure : scheme_object Box.t dyn_ref_map
                     }
 
 and 'a dyn_ref_map = (Identifier.t, 'a) Hashtbl.t list
@@ -150,10 +143,7 @@ type _ scheme_type +=
   | ListT : scheme_object list scheme_type
   | VecT : scheme_object Vector.t scheme_type
   | DottedT : (scheme_object list * scheme_object) scheme_type
-
-  | LambT : lambda_record scheme_type
   | ProcT : proc_sig scheme_type
-
   | PortT : port scheme_type
 
 type _ scheme_value +=
@@ -167,7 +157,6 @@ type _ scheme_value +=
   | List : scheme_object list -> scheme_object list scheme_value
   | Vec : scheme_object Vector.t -> scheme_object Vector.t scheme_value
   | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) scheme_value
-  | Lamb : lambda_record -> lambda_record scheme_value
   | Proc : proc_sig -> proc_sig scheme_value
   | Port : port -> port scheme_value
 

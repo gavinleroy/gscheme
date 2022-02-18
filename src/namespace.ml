@@ -112,7 +112,7 @@ let base_table () =
   let open Wrappers in
   let base = empty_table () in
   let extend i p =
-    Hashtbl.add base i (Box.make (Util.make_proc (i, p))) in
+    Hashtbl.add base i (Box.make (Util.make_proc (Some i, p))) in
   begin
     extend "boolean?" (predicate U.is_bool);
     extend "symbol?" (predicate U.is_id);
@@ -122,7 +122,7 @@ let base_table () =
     extend "pair?" (predicate U.is_pair);
     extend "number?" (predicate U.is_number);
     extend "string?" (predicate U.is_string);
-    extend "procedure?" (predicate U.is_func);
+    extend "procedure?" (predicate U.is_procedure);
     (* numerical predicates *)
     extend "integer?" (predicate U.is_integer);
 
@@ -138,6 +138,7 @@ let base_table () =
     (* Add additional cadr cdar ... *)
     extend "cons" (double_arg_procedure Lib.cons);
     extend "list-ref" (double_arg_procedure Lib.list_ref);
+    extend "map" (double_arg_procedure Lib.map);
 
     (* FIXME move these to lib wrappers *)
     extend "list" Lib.list;

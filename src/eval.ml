@@ -6,6 +6,7 @@
 (*                                         *)
 (*******************************************)
 
+module List = Util.List
 module U = Util
 open Types
 
@@ -18,7 +19,7 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
   match s with
   | s when U.is_bool s -> kontinue s
   | s when U.is_number s -> kontinue s
-  | s when U.is_func s -> kontinue s
+  | s when U.is_procedure s -> kontinue s
   | s when U.is_string s -> kontinue s
   | s when U.is_vector s -> kontinue s
 
@@ -52,26 +53,6 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
         set_bang nmspc sym ref_rhs
         >>= fun _ ->
         kontinue void)
-
-  | S_obj (ListT, List [ S_obj (IdT, Id "map"); func; ls ]) ->
-    eval func ~nmspc:nmspc ~kont:(fun box_f ->
-        eval ls ~nmspc:nmspc ~kont:(fun box_ls ->
-            match Box.get box_ls with
-            | S_obj (ListT, List ls) ->
-              begin
-                eval_many eval ls ~nmspc:nmspc ~kont:(fun boxed_ls ->
-                    let ls_vals = Box.get boxed_ls |> U.unwrap_list_exn in
-                    List.map (fun l -> apply (Box.get box_f) [ l ]) ls_vals
-                    |> (fun bs ->
-                        List.fold_right (fun mv acc ->
-                            acc
-                            >>= fun accs -> mv
-                            >>= fun mvu ->
-                            Err.ok (Box.get mvu :: accs)) bs (Ok []))
-                    >>| U.make_list
-                    >>= (fun o -> kont (Box.make o)))
-              end
-            | obj -> Err.error (Type_mismatch ("list?", obj))))
 
   | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym) ]) ->
     (* reserve a heap location for sym *)
@@ -136,9 +117,9 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
     eval func ~nmspc:nmspc ~kont:(fun box_f ->
         eval_many eval args ~nmspc:nmspc ~kont:(fun box_results ->
             let results = Box.get box_results
-                          |> U.unwrap_list_exn in
-            apply (Box.get box_f) results
-            >>= fun box_v -> kont box_v))
+            and f = Box.get box_f in
+            Lib.apply f results
+            >>= fun v -> kont (Box.make v)))
   | v -> raise (Err.Unexpected (__LOC__, void))
 
 and eval_unquoted ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
@@ -175,42 +156,6 @@ and eval_many ?(nmspc = Namespace.base ()) ?(kont = final_kont) evaluator es =
           loop ((Box.get box_res) :: acc) es nmspc k)
   in loop [] es nmspc kont
 
-and apply : scheme_object -> scheme_object list -> scheme_object Box.t maybe_exn
-  = fun f args -> let open U in
-    match f with
-    | f when is_procedure f ->
-      (f |> unwrap_procedure |> Err.get_ok) args
-      >>= fun v -> Err.ok (Box.make v)
-
-    | S_obj (LambT, Lamb { name; params; varargs; body; closure }) ->
-      let closure = Namespace.open_scope closure in
-      let len = List.length in
-      let remaining = List.filteri (fun i _ ->
-          len params <= i) args
-                      |> make_list |> Box.make
-      in
-      let bind_var_args a e = match a with
-        | None -> e
-        | Some name ->
-          Namespace.extend e name remaining;
-          e
-      in
-      begin match len params, len args with
-        | lps, las when lps > las ->
-          Err.error (Arity_mismatch (lps, las, args))
-        | lps, las when lps <> las && Option.is_none varargs ->
-          Err.error (Arity_mismatch (lps, las, args))
-        | lps, las ->
-          begin
-            Namespace.extend_many_unboxed closure params args;
-            bind_var_args varargs closure
-            |> fun e -> eval_many eval ~nmspc:e body
-            >>| (Box.make <.> List.last <.> U.unwrap_list_exn <.> Box.get)
-          end
-      end
-
-    | s -> Err.error (Type_mismatch ("procedure?", s))
-
 (* small helper functions *)
 
 and make_func
@@ -220,13 +165,34 @@ and make_func
     -> id list
     -> scheme_object list
     -> scheme_object Box.t
-  = fun va nm e ps bdy ->
-    U.make_lambda { name = nm
-                  ; params = ps
-                  ; varargs = va
-                  ; body = bdy
-                  ; closure = e
-                  } |> Box.make
+  = fun varargs nm nmspc params body ->
+    let ( <.> ) = Util.(<.>) in
+    U.make_proc (nm, (fun args ->
+        let closure = Namespace.open_scope nmspc in
+        let len = List.length in
+        let remaining = List.filteri (fun i _ ->
+            len params <= i) args
+                        |> Util.make_list |> Box.make
+        in
+        let bind_var_args a e = match a with
+          | None -> e
+          | Some name ->
+            Namespace.extend e name remaining;
+            e
+        in
+        begin match len params, len args with
+          | lps, las when lps > las ->
+            Err.error (Arity_mismatch (lps, las, args))
+          | lps, las when lps <> las && Option.is_none varargs ->
+            Err.error (Arity_mismatch (lps, las, args))
+          | lps, las ->
+            begin
+              Namespace.extend_many_unboxed closure params args;
+              bind_var_args varargs closure
+              |> fun e -> eval_many eval ~nmspc:e body
+              >>| (List.last <.> U.unwrap_list_exn <.> Box.get)
+            end
+        end)) |> Box.make
 
 and make_va
   : string

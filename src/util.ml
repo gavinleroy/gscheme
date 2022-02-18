@@ -126,12 +126,12 @@ and is_procedure = function
   | S_obj (ProcT, Proc _) -> true
   | _ -> false
 
-and is_lambda = function
-  | S_obj (LambT, Lamb _) -> true
-  | _ -> false
+(* and is_lambda = function
+ *   | S_obj (LambT, Lamb _) -> true
+ *   | _ -> false *)
 
-and is_func f =
-  is_procedure f || is_lambda f
+(* and is_func f =
+ *   is_procedure f || is_lambda f *)
 
 and is_syntax = function
   | S_obj (StxT, Stx _) -> true
@@ -157,7 +157,7 @@ and make_vector v = S_obj (VecT, Vec v)
 
 and make_dotted p = S_obj (DottedT, Dotted p)
 
-and make_lambda f = S_obj (LambT, Lamb f)
+(* and make_lambda f = S_obj (LambT, Lamb f) *)
 
 and make_proc f = S_obj (ProcT, Proc f)
 

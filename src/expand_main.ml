@@ -24,7 +24,7 @@ let register () =
     Core.add_core_primitive_bang
       "syntax-e"
       (Namespace.Wrappers.single_arg_procedure Syntax.syntax_e
-       |> fun f -> Util.make_proc ("syntax-e", f));
+       |> fun f -> Util.make_proc (Some "syntax-e", f));
 
     (* The current version of datum->syntax
        is not  well supported for exposing to
@@ -34,7 +34,7 @@ let register () =
       (Namespace.Wrappers.double_arg_procedure
          (fun ctx v ->
             Syntax.datum_to_syntax (Some ctx) v)
-       |> fun f -> Util.make_proc ("datum->syntax", f));
+       |> fun f -> Util.make_proc (Some "datum->syntax", f));
 
   end
 
@@ -65,75 +65,82 @@ and compile = Compile.compile
 
 let%test_module _ = (module struct
 
-  let open struct
+  open Util
+
+  open struct
     open Types
     let ( >>= ), ( >> ) = Err.( >>= ), Err.( >> )
-  end in
+  end
 
-  Terminal.print_endline "Testing expand-main module ===>";
+  let _ = register ()
+  let _ = Terminal.print_endline "Testing expand-main module ===>"
 
   let display cmp vl =
-    Terminal.display_result cmp;
+    Terminal.display_scm_obj cmp;
     Terminal.print " = ";
-    Terminal.display_result vl;
-    print_newline ();
-  in
+    Terminal.display_scm_obj_endline vl
 
   let expand_print_eval expr =
-    expand_expression expr
-    >>= compile
-    >>= fun compiled -> eval compiled
-    >>| fun evaled ->
-    (display compiled evaled);
-    evaled
-  in
+    (expand_expression expr
+     >>= compile
+     >>= fun compiled -> eval compiled
+     >>| fun evaled ->
+     (display compiled evaled);
+     evaled) |> fun r ->
+    Terminal.display_result_endline r;
+    Terminal.force_newline ();
+    Types.Err.ok ()
+
+  let add_let es =
+    Util.Test.string_to_datum
+      "((let (lambda (stx)
+             (datum->syntax
+              (quote-syntax here)
+              (cons
+               (list (quote-syntax lambda)
+                     (map (lambda (b)
+                            (car (syntax-e b)))
+                          (syntax-e (car (cdr (syntax-e stx)))))
+                     (car (cdr (cdr (syntax-e stx)))))
+               (map (lambda (b)
+                      (car (cdr (syntax-e b))))
+                    (syntax-e (car (cdr (syntax-e stx))))))))))"
+    |> fun inner ->
+    Util.make_list [ Util.make_symbol "let-syntax"
+                   ; inner
+                   ; Util.Test.string_to_datum es
+                   ]
+
+  let%test _ = (
+    let _v = expand_print_eval
+        (Test.string_to_datum
+           "(lambda (x) x)") in
+    true)
+
+  let%test _ = (
+    let _v =
+      (expand_print_eval
+         (add_let
+            "(lambda (x)
+               (let ((y x))
+                 y))")) in
+    true)
+
+  let%test _ = (
+    let _v =
+      (expand_print_eval
+         (add_let
+            "(lambda (x)
+               (let-syntax ((y (lambda (stx) (quote-syntax 9)))) y))")) in
+    true)
 
   (*
-   * (define (expand-expression e)
-   *   (expand (namespace-syntax-introduce (datum->syntax #f e))))
-   *
-   * (define (compile+eval-expression e)
-   *   (define c
-   *     (compile (expand-expression e)))
-   *   (values c
-   *           (eval c)))
-   *
    * (define (eval-expression e #:check [check-val #f])
    *   (define-values (c v) (compile+eval-expression e))
    *   (when check-val
    *     (unless (equal? v check-val)
    *       (error "check failed")))
    *   v)
-   *
-   * (compile+eval-expression
-   *  '(lambda (x) x))
-   *
-   * ;; examples are easier with `let`:
-   * (define (add-let e)
-   *   `(let-syntax ([let (lambda (stx)
-   *                        (datum->syntax
-   *                         (quote-syntax here)
-   *                         (cons
-   *                          (list (quote-syntax lambda)
-   *                                (map (lambda (b)
-   *                                       (car (syntax-e b)))
-   *                                     (syntax-e (car (cdr (syntax-e stx)))))
-   *                                (car (cdr (cdr (syntax-e stx)))))
-   *                          (map (lambda (b)
-   *                                 (car (cdr (syntax-e b))))
-   *                               (syntax-e (car (cdr (syntax-e stx))))))))])
-   *     ,e))
-   *
-   * (compile+eval-expression
-   *  (add-let
-   *   '(lambda (x)
-   *     (let ([y x])
-   *       y))))
-   *
-   * (compile+eval-expression
-   *  '(lambda (x)
-   *    (let-syntax ([y (lambda (stx) (quote-syntax 7))])
-   *      y)))
    *
    * (compile+eval-expression
    *  (add-let
@@ -213,6 +220,6 @@ let%test_module _ = (module struct
    *                             v))))
    *   (error "shouldn't get here")) *)
 
-  Terminal.print_endline "<=== Done expand-main\n";
+  let _ = Terminal.print_endline "<=== Done expand-main\n"
 
 end)

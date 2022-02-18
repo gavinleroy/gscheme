@@ -24,11 +24,11 @@ let format_scheme_obj
       match s with
       | s when Util.is_void s ->
         fprintf fmt "#<void>"
-      | S_obj (LambT, Lamb rc) ->
-        fprintf fmt "#<procedure %s>"
-          (Option.value rc.name ~default:"anonymous")
+
       | S_obj (ProcT, Proc (name, _)) ->
-        fprintf fmt "#<procedure %s>" name
+        fprintf fmt "#<procedure %s>"
+          (Option.value ~default:"anonymous" name)
+
       | S_obj (BoolT, Bool true) ->
         fprintf fmt "#t"
       | S_obj (BoolT, Bool false) ->
@@ -129,20 +129,32 @@ let format_internal_exn_endline
       Format.print_flush ()
     end
 
-let display_result ?(ignore = fun _ -> false) v =
-  if not (Util.is_void v) then
-    Format.fprintf repl_fmt "@[%a@]"
-      format_scheme_obj v
+let display_scm_obj o =
+  Format.fprintf repl_fmt "@[%a@]"
+    format_scheme_obj o
 
-let display_result_endline ?(ignore = fun _ -> false) v =
-  display_result ~ignore:ignore v;
-  Format.print_flush ();
-  print_newline ()
+let display_scm_obj_endline o =
+  display_scm_obj o;
+  Format.print_newline ();
+  Format.print_flush ()
 
 let display_exn_endline e =
   format_runtime_exn repl_fmt e;
   Format.print_flush ();
   Format.print_newline ()
+
+let display_result ?(ignore = fun _ -> false) = function
+  | Ok v ->
+    if not (Util.is_void v) then
+      Format.fprintf repl_fmt "@[%a@]"
+        format_scheme_obj v
+  | Error e ->
+    display_exn_endline e
+
+let display_result_endline ?(ignore = fun _ -> false) v =
+  display_result ~ignore:ignore v;
+  Format.print_flush ();
+  print_newline ()
 
 let print s =
   Format.fprintf repl_fmt "%s" s
@@ -154,6 +166,12 @@ let print_flush s =
 let print_endline s =
   print_flush s;
   Format.print_newline ()
+
+let force_newline () =
+  Format.print_newline ()
+
+let read_expr () =
+  read_line ()
 
 let init () =
   Format.pp_set_geometry ~max_indent:6 ~margin:25 repl_fmt;

@@ -115,7 +115,7 @@ let is_missing = function
 
 let is_transformer = function
   (* | S_obj (TransformerT, Transformer _) -> true *)
-  | o when Util.is_func o -> true
+  | o when Util.is_procedure o -> true
   | _ -> false
 
 (* let unwrap_transformer_exn = function

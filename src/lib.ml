@@ -171,6 +171,26 @@ let vector_make
     | [ arg ] -> error (Type_mismatch ("integer?", arg))
     | ls -> error (Arity_mismatch (1, List.length ls, ls))
 
+let apply
+  = fun f args -> match f, args with
+    | f, args when Util.is_procedure f && Util.is_list args ->
+      Util.unwrap_procedure f
+      >>= fun f ->
+      f (Util.unwrap_list_exn args)
+    | f, args when Util.is_list args ->
+      error (Type_mismatch ("procedure?", f))
+    | _, oth -> error (Type_mismatch ("list?", oth))
+
+let map
+  = fun f ls ->
+    match f, ls with
+    | f, ls when is_procedure f && is_list ls ->
+      list_map_m (fun v ->
+          make_list [ v ] |> apply f) ls
+    | f, ls when is_list ls ->
+      error (Type_mismatch ("procedure?", f))
+    | _, ls -> error (Type_mismatch ("list?", ls))
+
 (* IO primitives *)
 
 let open_input_file : scheme_object -> scheme_object maybe_exn
