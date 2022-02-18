@@ -17,22 +17,22 @@ end
 
 let syntax_e : scheme_object -> scheme_object maybe_exn
   = function
-    | S_obj (StxT, Stx r) -> Err.ok r.e
+    | Stx r -> Err.ok r.e
     | obj -> Err.error (Type_mismatch ("syntax?", obj))
 
 let syntax_scopes : scheme_object -> Scopes.t maybe_exn
   = function
-    | S_obj (StxT, Stx r) -> Err.ok r.scopes
+    | Stx r -> Err.ok r.scopes
     | obj -> Err.error (Type_mismatch ("syntax?", obj))
 
 let empty_syntax =
-  S_obj (StxT, Stx { e = Types.void
-                   ; scopes = Scopes.empty })
+  Stx { e = Types.void
+      ; scopes = Scopes.empty }
 
 let is_identifier : scheme_object -> bool
   = fun s -> U.is_syntax s &&
              begin match syntax_e s with
-               | Ok obj when U.is_id obj -> true
+               | Ok obj when U.is_symbol obj -> true
                | _ -> false
              end
 

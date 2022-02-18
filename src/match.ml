@@ -67,7 +67,7 @@ let match_syntax : scheme_object -> scheme_object
       if U.is_symbol pattern then
         if (Str.string_match (Str.regexp "^id(:\\|$)")
               (U.unwrap_symbol pattern |> get_ok) 0
-            && not (U.is_id s)) then
+            && not (U.is_symbol s)) then
           error (Bad_form ("not an identifier", s))
         else U.make_list [ U.make_list [ pattern; s ] ] |> ok
 

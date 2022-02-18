@@ -49,5 +49,4 @@ let start () =
   Terminal.init ();
   Terminal.print_endline "Welcome to GScheme v0.0.1\n";
   Expand_main.register ();
-  Cfg.turn_eval_off (); (* FIXME remove after testing *)
   loop ()

@@ -115,7 +115,7 @@ let base_table () =
     Hashtbl.add base i (Box.make (Util.make_proc (Some i, p))) in
   begin
     extend "boolean?" (predicate U.is_bool);
-    extend "symbol?" (predicate U.is_id);
+    extend "symbol?" (predicate U.is_symbol);
     extend "char?" (predicate U.is_char);
     extend "vector?" (predicate U.is_vector);
     extend "null?" (predicate U.is_null);

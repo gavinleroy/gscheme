@@ -40,178 +40,150 @@ module List = struct
 
 end
 
-let rec unwrap_int : scheme_object -> int64 Err.t
+let is_void = function
+  | Void -> true
+  | _ -> false
+
+and is_symbol = function
+  | Id _ -> true
+  | _ -> false
+
+and is_char = function
+  | Char _ -> true
+  | _ -> false
+
+and is_string = function
+  | String _ -> true
+  | _ -> false
+
+and is_bool = function
+  | Bool _ -> true
+  | _ -> false
+
+and is_number = function
+  | Num _ -> true
+  | _ -> false
+
+and is_integer = function
+  | Num (Number.Int _) -> true
+  | _ -> false
+
+(* a pair is a tuple or non-empty list *)
+and is_pair = function
+  | Dotted _ | List (_ :: _) -> true
+  | _ -> false
+
+and is_list = function
+  | List _ -> true
+  | _ -> false
+
+and is_vector = function
+  | Vec _ -> true
+  | _ -> false
+
+and is_null = function
+  | List [] -> true
+  | _ -> false
+
+and is_procedure = function
+  | Proc _ -> true
+  | _ -> false
+
+and is_syntax = function
+  | Stx _ -> true
+  | _ -> false
+
+and is_not = function
+  | Bool false -> true
+  | _ -> false
+
+and unwrap_int : scheme_object -> int64 Err.t
   = fun s ->
     match s with
-    | S_obj (NumT, Num (Number.Int i)) -> Err.ok i
+    | Num (Number.Int i) -> Err.ok i
     | s -> Err.error (Type_mismatch ("int?", s))
 
 and unwrap_num : scheme_object -> Number.t Err.t
   = fun s ->
     match s with
-    | S_obj (NumT, Num n) ->  Err.ok n
+    | Num n ->  Err.ok n
     | _ -> Err.error (Type_mismatch ("number?", s))
 
 and unwrap_bool : scheme_object -> bool Err.t
   = fun s ->
     match s with
-    | S_obj (BoolT, Bool b) -> Err.ok b
+    | Bool b -> Err.ok b
     | s -> Err.error (Type_mismatch ("bool?", s))
 
-and unwrap_id : scheme_object -> id Err.t
+and unwrap_symbol : scheme_object -> id Err.t
   = fun s ->
     match s with
-    | S_obj (IdT, Id id) -> Err.ok id
+    | Id id -> Err.ok id
     | s -> Err.error (Type_mismatch ("identifier?", s))
 
 and unwrap_list : scheme_object -> scheme_object list Err.t
   = fun s ->
     match s with
-    | S_obj (ListT, List l) -> Err.ok l
+    | List l -> Err.ok l
     | s -> Err.error (Type_mismatch ("list?", s))
 
 and unwrap_procedure : scheme_object -> (scheme_object list -> scheme_object Err.t) Err.t
   = fun s ->
     match s with
-    | S_obj (ProcT, Proc (_, f)) -> Err.ok f
+    | Proc (_, f) -> Err.ok f
     | _ -> Err.error (Type_mismatch ("procedure?", s))
 
-and is_void = function
-  | S_obj (VoidT, Void) -> true
-  | _ -> false
-
-and is_id = function
-  | S_obj (IdT, Id _) -> true
-  | _ -> false
-
-and is_char = function
-  | S_obj (CharT, Char _) -> true
-  | _ -> false
-
-and is_string = function
-  | S_obj (StringT, String _) -> true
-  | _ -> false
-
-and is_bool = function
-  | S_obj (BoolT, Bool _) -> true
-  | _ -> false
-
-and is_number = function
-  | S_obj (NumT, Num _) -> true
-  | _ -> false
-
-and is_integer = function
-  | S_obj (NumT, Num (Number.Int _)) -> true
-  | _ -> false
-
-(* a pair is a tuple or non-empty list *)
-and is_pair = function
-  | S_obj (DottedT, Dotted _)
-  | S_obj (ListT, List (_ :: _)) -> true
-  | _ -> false
-
-and is_list = function
-  | S_obj (ListT, List _) -> true
-  | _ -> false
-
-and is_vector = function
-  | S_obj (VecT, Vec _) -> true
-  | _ -> false
-
-and is_null = function
-  | S_obj (ListT, List []) -> true
-  | _ -> false
-
-and is_procedure = function
-  | S_obj (ProcT, Proc _) -> true
-  | _ -> false
-
-(* and is_lambda = function
- *   | S_obj (LambT, Lamb _) -> true
- *   | _ -> false *)
-
-(* and is_func f =
- *   is_procedure f || is_lambda f *)
-
-and is_syntax = function
-  | S_obj (StxT, Stx _) -> true
-  | _ -> false
-
-and is_not = function
-  | S_obj (BoolT, Bool false) -> true
-  | _ -> false
-
-and make_bool b = S_obj (BoolT, Bool b)
-
-and make_id id = S_obj (IdT, Id id)
-
-and make_string s = S_obj (StringT, String s)
-
-and make_num n = S_obj (NumT, Num n)
-
-and make_int i = S_obj (NumT, Num (Number.Int i))
-
-and make_list l = S_obj (ListT, List l)
-
-and make_vector v = S_obj (VecT, Vec v)
-
-and make_dotted p = S_obj (DottedT, Dotted p)
-
-(* and make_lambda f = S_obj (LambT, Lamb f) *)
-
-and make_proc f = S_obj (ProcT, Proc f)
-
-and make_syntax s = S_obj (StxT, Stx s)
-
-and make_port p = S_obj (PortT, Port p)
-
-(* these should be used, and XXX_id variants deprecated *)
-
-let is_symbol = is_id
-
-let unwrap_symbol = unwrap_id
+(* XXX unsafe operations *)
 
 let unwrap_symbol_exn =
   (Err.get_ok <.> unwrap_symbol)
 
+and unwrap_list_exn =
+  (Err.get_ok <.> unwrap_list)
+
+let make_bool b = Bool b
+and make_string s = String s
+and make_symbol id = Id id
+and make_num n = Num n
+and make_int i = Num (Number.Int i)
+and make_list l = List l
+and make_vector v = Vec v
+and make_dotted p = Dotted p
+and make_proc f = Proc f
+and make_syntax s = Stx s
+and make_port p = Port p
+
 let symbol_is s sym =
   is_symbol s &&
   (unwrap_symbol_exn s) = sym
-
-let make_symbol = make_id
 
 (* NOTE in racket keword? -> true when #:... *)
 let is_keyword _ = false
 
 let or_false = Err.value ~default:false
 
-(* unsafe operations / INTERNAL USE ONLY *)
-
-let unwrap_list_exn =
-  (Err.get_ok <.> unwrap_list)
-
 let list_map : (scheme_object -> scheme_object) -> scheme_object -> scheme_object Err.t
   = fun f s -> match s with
-    | S_obj (ListT, List ls) ->
+    | List ls ->
       make_list (List.map f ls) |> Err.ok
     | obj -> Err.error (Type_mismatch ("list?", obj))
 
 let list_fold : type a. (a -> scheme_object -> a) -> a -> scheme_object -> a Err.t
   = fun f init s -> match s with
-    | S_obj (ListT, List ls) ->
+    | List ls ->
       List.fold_left f init ls |> Err.ok
     | obj -> Err.error (Type_mismatch ("list?", obj))
 
 let list_fold2 : type a. (a -> scheme_object -> scheme_object -> a) -> a -> scheme_object -> scheme_object -> a Err.t
   = fun f init s1 s2 -> match s1, s2 with
-    | S_obj (ListT, List ls), S_obj (ListT, List rs) ->
+    | List ls, List rs ->
       List.fold_left2 f init ls rs |> Err.ok
     | o1, o2 when is_list o2  -> Err.error (Type_mismatch ("list?", o1))
     | o1, o2 -> Err.error (Type_mismatch ("list?", o2))
 
 let list_map_m : (scheme_object -> scheme_object Err.t) -> scheme_object -> scheme_object Err.t
   = fun f -> function
-    | S_obj (ListT, List ls) ->
+    | List ls ->
       Err.map (Err.map_m f ls) (fun rs -> make_list rs)
     | obj -> Err.error (Type_mismatch ("list?", obj))
 

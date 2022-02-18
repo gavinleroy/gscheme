@@ -23,43 +23,43 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
   | s when U.is_string s -> kontinue s
   | s when U.is_vector s -> kontinue s
 
-  | S_obj (IdT, Id id) ->
+  | Id id ->
     Namespace.lookup nmspc id
     >>= kont
 
   (* different quoting types *)
-  | S_obj (ListT, List [ S_obj (IdT, Id "quote"); v]) ->
+  | List [ Id "quote"; v ] ->
     kontinue v
 
-  | S_obj (ListT, List [ S_obj (IdT, Id "quasiquote"); ls ]) ->
+  | List [ Id "quasiquote"; ls ] ->
     eval_unquoted
-      (U.make_list [ U.make_id "quote"; ls ])
+      (U.make_list [ U.make_symbol "quote"; ls ])
       ~nmspc:nmspc ~kont:kont
 
-  | S_obj (ListT, List ( S_obj (IdT, Id "unquote") :: _)) ->
+  | List ( Id "unquote" :: _) ->
     Err.error (Bad_form ("unquote note in quasiquote", s))
 
-  | S_obj (ListT, List [ S_obj (IdT, Id "if"); cond; te; fe ]) ->
+  | List [ Id "if"; cond; te; fe ] ->
     eval cond ~nmspc:nmspc ~kont:(fun box_v ->
         match Box.get box_v with
-        | S_obj (BoolT, Bool false) ->
+        | Bool false ->
           (* NOTE the only false value in scheme is #f *)
           eval ~nmspc:nmspc ~kont:kont fe
         | _ ->
           eval ~nmspc:nmspc ~kont:kont te)
 
-  | S_obj (ListT, List [ S_obj (IdT, Id "set!"); S_obj (IdT, Id sym); rhs ]) ->
+  | List [ Id "set!"; Id sym; rhs ] ->
     eval rhs ~nmspc:nmspc ~kont:(fun ref_rhs ->
         set_bang nmspc sym ref_rhs
         >>= fun _ ->
         kontinue void)
 
-  | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym) ]) ->
+  | List [ Id "define"; Id sym ] ->
     (* reserve a heap location for sym *)
     Namespace.extend nmspc sym (Box.make void);
     kont (Box.make void)
 
-  | S_obj (ListT, List [ S_obj (IdT, Id "define"); S_obj (IdT, Id sym); rhs]) ->
+  | List [ Id "define"; Id sym; rhs] ->
     (* reserve a heap location for sym *)
     Namespace.extend nmspc sym (Box.make void);
     eval rhs ~nmspc:nmspc ~kont:(fun box_v ->
@@ -71,48 +71,47 @@ let rec eval ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
    * can be implemented as sugar for a (define foo (lambda (arg1 arg2 ...) ...))
    * This should be done once macros are at a stable state.
    ***)
-  | S_obj (ListT, List (S_obj (IdT, Id "define")
-                        :: S_obj (ListT, List (S_obj (IdT, Id fname) :: params))
-                        :: body)) ->
+  | List (Id "define"
+          :: List (Id fname :: params)
+          :: body) ->
     Namespace.extend nmspc fname (Box.make void);
-    Err.map_m U.unwrap_id params
+    Err.map_m U.unwrap_symbol params
     >>= fun params ->
     set_bang nmspc fname (make_fix (Some fname) nmspc params body) |> Err.get_ok;
     kont (Box.make void)
 
-  | S_obj (ListT, List (S_obj (IdT, Id "define")
-                        :: S_obj (DottedT, Dotted
-                                    (S_obj (IdT, Id fname) :: params, varargs))
-                        :: body)) ->
+  | List (Id "define"
+          :: Dotted (Id fname :: params, varargs)
+          :: body) ->
     Namespace.extend nmspc fname (Box.make void);
-    Err.map_m U.unwrap_id params
-    >>= fun params -> U.unwrap_id varargs
+    Err.map_m U.unwrap_symbol params
+    >>= fun params -> U.unwrap_symbol varargs
     >>= fun va_id ->
     set_bang nmspc fname (make_va va_id (Some fname) nmspc params body) |> Err.get_ok;
     kont (Box.make void)
 
-  | S_obj (ListT, List (S_obj (IdT, Id "lambda")
-                        :: S_obj (ListT, List params)
-                        :: body)) ->
-    Err.map_m U.unwrap_id params
+  | List (Id "lambda"
+          :: List params
+          :: body) ->
+    Err.map_m U.unwrap_symbol params
     >>= fun params ->
     kont (make_fix None nmspc params body)
 
-  | S_obj (ListT, List (S_obj (IdT, Id "lambda")
-                        :: S_obj (DottedT, Dotted
-                                    (S_obj (IdT, Id fname) :: params, varargs))
-                        :: body)) ->
-    Err.map_m U.unwrap_id params
-    >>= fun params -> U.unwrap_id varargs
+  | List (Id "lambda"
+          :: Dotted
+            (Id fname :: params, varargs)
+          :: body) ->
+    Err.map_m U.unwrap_symbol params
+    >>= fun params -> U.unwrap_symbol varargs
     >>= fun vararg ->
     kont (make_va vararg None nmspc params body)
 
-  | S_obj (ListT, List (S_obj (IdT, Id "lambda") :: S_obj (IdT, Id vararg) :: body)) ->
+  | List (Id "lambda" :: Id vararg :: body) ->
     kont (make_va vararg None nmspc [] body)
 
   (* function application *)
-  | S_obj (ListT, List (S_obj (IdT, Id "#%app") :: func :: args))
-  | S_obj (ListT, List (func :: args)) ->
+  | List (Id "#%app" :: func :: args)
+  | List (func :: args) ->
     let open U in
     eval func ~nmspc:nmspc ~kont:(fun box_f ->
         eval_many eval args ~nmspc:nmspc ~kont:(fun box_results ->
@@ -126,13 +125,13 @@ and eval_unquoted ?(nmspc = Namespace.base ()) ?(kont = final_kont) s =
   let open U in
   let kontinue v = kont (Box.make v) in
   match s with
-  | S_obj (ListT, List [ S_obj (IdT, Id "unquote"); inner ]) ->
+  | List [ Id "unquote"; inner ] ->
     eval ~nmspc:nmspc ~kont:kont inner
 
-  | S_obj (ListT, List ls) ->
+  | List ls ->
     eval_many eval_unquoted ls ~nmspc:nmspc ~kont:kont
 
-  | S_obj (DottedT, Dotted (ls, last)) ->
+  | Dotted (ls, last) ->
     eval_many eval_unquoted ls ~nmspc:nmspc ~kont:(fun boxed_ls ->
         eval_unquoted last ~nmspc:nmspc ~kont:(fun boxed_last ->
             let ls = Box.get boxed_ls |> U.unwrap_list_exn in
@@ -235,18 +234,18 @@ let%test_module _ = (module struct
     >>| Box.get
 
   let%test _ = (
-    let obj = (S_obj (NumT, Num (Number.Int 1L))) in
+    let obj = (Num (Number.Int 1L)) in
     eval_to_value (Namespace.empty ()) obj
     = Ok obj)
 
   let%test _ = (
-    let obj = (S_obj (StringT, String "hello world")) in
+    let obj = (String "hello world") in
     eval_to_value (Namespace.empty ()) obj
     = Ok obj)
 
   let%test _ = (
     expect_exn (Free_var ("", None))
-      (let obj = (S_obj (IdT, Id "atom")) in
+      (let obj = (Id "atom") in
        eval_to_value (Namespace.empty ()) obj))
 
   let%test _ = (
@@ -312,7 +311,7 @@ let%test_module _ = (module struct
 
   let%test _ = (
     (eval_from_str "`(1 2 ,(+ 1 2))")
-    = Ok (make_list [ make_id "quote"
+    = Ok (make_list [ make_symbol "quote"
                     ; make_list [make_int 1L; make_int 2L; make_int 3L ] ]))
 
   (* test recursive functions *)
@@ -343,13 +342,13 @@ let%test_module _ = (module struct
 
   let%test _ = (
     (eval_from_str "(vector-ref (make-vector 10 'hello) 4)")
-    = Ok (make_id "hello"))
+    = Ok (make_symbol "hello"))
 
   let%test _ = (
     (eval_from_str "(define vec #(1 2 'scheme #t (lambda (x) x)))
                     (vector-set! vec 4 #f)
                     (if (vector-ref vec 4) 'wrong 'correct)")
-    = Ok (make_id "correct"))
+    = Ok (make_symbol "correct"))
 
   let%test _ = (
     (eval_from_str "(define x 0)

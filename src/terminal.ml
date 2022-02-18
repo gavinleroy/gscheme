@@ -25,40 +25,36 @@ let format_scheme_obj
       | s when Util.is_void s ->
         fprintf fmt "#<void>"
 
-      | S_obj (ProcT, Proc (name, _)) ->
+      | Proc (name, _) ->
         fprintf fmt "#<procedure %s>"
           (Option.value ~default:"anonymous" name)
 
-      | S_obj (BoolT, Bool true) ->
-        fprintf fmt "#t"
-      | S_obj (BoolT, Bool false) ->
-        fprintf fmt "#f"
-      | S_obj (StringT, String s) ->
-        fprintf fmt "\"%s\"" s
-      | S_obj (IdT, Id s) ->
-        fprintf fmt "%s" s
-      | S_obj (NumT, Num (Number.Int i)) ->
+      | Bool true -> fprintf fmt "#t"
+      | Bool false -> fprintf fmt "#f"
+      | String s -> fprintf fmt "\"%s\"" s
+      | Id s -> fprintf fmt "%s" s
+      | Num (Number.Int i) ->
         fprintf fmt "%Li" i
-      | S_obj (StxT, Stx s) ->
+      | Stx s ->
         if List.mem `Syntax attributes then
           fprintf fmt "%a" recur s.e
         else fprintf fmt "#<syntax %a>" (recur_with `Syntax) s.e
       (* different quoted forms *)
-      | S_obj (ListT, List [S_obj (IdT, Id "quote"); rhs]) ->
+      | List [Id "quote"; rhs] ->
         fprintf fmt "'%a" (recur_with `Quote) rhs
-      | S_obj (ListT, List [S_obj (IdT, Id "quasiquote"); rhs]) ->
+      | List [Id "quasiquote"; rhs] ->
         fprintf fmt "`%a" (recur_with `Quote) rhs
-      | S_obj (ListT, List [S_obj (IdT, Id "unquote"); rhs]) ->
+      | List [Id "unquote"; rhs] ->
         fprintf fmt ",%a" (recur_without `Quote) rhs
-      | S_obj (ListT, List ls) ->
+      | List ls ->
         fprintf fmt "(%a)"
           (pp_print_list ~pp_sep:pp_print_space recur)
           ls
-      | S_obj (VecT, Vec vector) ->
+      | Vec vector ->
         fprintf fmt "#(%a)"
           (pp_print_list ~pp_sep:pp_print_space recur)
           (Vector.to_list vector)
-      | S_obj (DottedT, Dotted (ls, tl)) ->
+      | Dotted (ls, tl) ->
         fprintf fmt "(%a . %a)"
           (pp_print_list ~pp_sep:pp_print_space
              recur) ls

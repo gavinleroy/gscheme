@@ -102,9 +102,7 @@ end
 
 module Scopes = Set.Make(Scope)
 
-type _ scheme_type = ..
-
-type _ scheme_value = ..
+type scheme_object = ..
 
 type runtime_exn' =
   | Runtime_error of (string * scheme_object)
@@ -120,8 +118,6 @@ and proc_sig = (Identifier.t option) * (scheme_object list -> scheme_object mayb
 
 and (_, _) eq = Eq : ('a, 'a) eq
 
-and scheme_object = S_obj : 'a scheme_type * 'a scheme_value -> scheme_object
-
 and syntax_record = { e : scheme_object
                     ; scopes : Scopes.t
                     }
@@ -132,37 +128,23 @@ and port =
   | WritePort of out_channel
   | ReadPort of in_channel
 
-type _ scheme_type +=
-  | VoidT : unit scheme_type
-  | BoolT : bool scheme_type
-  | NumT : Number.t scheme_type
-  | CharT : Char.t scheme_type
-  | StringT : String.t scheme_type
-  | IdT : id scheme_type
-  | StxT : syntax_record scheme_type
-  | ListT : scheme_object list scheme_type
-  | VecT : scheme_object Vector.t scheme_type
-  | DottedT : (scheme_object list * scheme_object) scheme_type
-  | ProcT : proc_sig scheme_type
-  | PortT : port scheme_type
+type scheme_object +=
+  | Void
+  | Bool of bool
+  | Num of Number.t
+  | Char of Char.t
+  | String of String.t
+  | Id of Identifier.t
+  | Stx of syntax_record
+  | List of scheme_object list
+  | Vec of scheme_object Vector.t
+  | Dotted of (scheme_object list * scheme_object)
+  | Proc of proc_sig
+  | Port of port
 
-type _ scheme_value +=
-  | Void : unit scheme_value
-  | Bool : bool -> bool scheme_value
-  | Num : Number.t -> Number.t scheme_value
-  | Char : Char.t -> Char.t scheme_value
-  | String : String.t -> String.t scheme_value
-  | Id : id -> id scheme_value
-  | Stx : syntax_record -> syntax_record scheme_value
-  | List : scheme_object list -> scheme_object list scheme_value
-  | Vec : scheme_object Vector.t -> scheme_object Vector.t scheme_value
-  | Dotted : (scheme_object list * scheme_object) -> (scheme_object list * scheme_object) scheme_value
-  | Proc : proc_sig -> proc_sig scheme_value
-  | Port : port -> port scheme_value
+let void = Void
 
-let void = S_obj (VoidT, Void) (** The singleton void type *)
-
-let null = S_obj (ListT, List []) (** The singleton '() *)
+let null = List [] (** The singleton '() *)
 
 (* TODO other control flow exn primitives *)
 

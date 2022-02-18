@@ -16,53 +16,40 @@ open Err
 
 module MacroCompileEnv = Map.Make(Types.Gensym)
 
-type _ Types.scheme_type +=
-  | Gensym : Gensym.t scheme_type
-  | ExpanderT :
-      (scheme_object
-       -> scheme_object MacroCompileEnv.t
-       -> scheme_object Err.t) scheme_type
+type Types.scheme_object +=
+  | Variable | Missing
+  | Core_binding of Identifier.t
+  | Core_form of (scheme_object
+                  -> scheme_object MacroCompileEnv.t
+                  -> scheme_object Err.t)
 
-type _ Types.scheme_value +=
-  | Core_binding : id -> id scheme_value
-  | Core_form :
-      (scheme_object
-       -> scheme_object MacroCompileEnv.t
-       -> scheme_object Err.t)
-      -> (scheme_object
-          -> scheme_object MacroCompileEnv.t
-          -> scheme_object Err.t) Types.scheme_value
-
-  | Local_binding : Gensym.t -> Gensym.t Types.scheme_value
-  | Variable : unit Types.scheme_value
-  | Missing : unit Types.scheme_value
+  | Local_binding of Gensym.t
 
 let is_core_binding = function
-  | S_obj (IdT, Core_binding _) -> true
+  | Core_binding _ -> true
   | _ -> false
 
 and core_binding_sym = function
-  | S_obj (IdT, Core_binding sym) -> sym
+  | Core_binding sym -> sym
   | _ -> raise (Unexpected ("binding 'core-binding-sym precondition invalidated", Types.void))
 
 let is_local_binding = function
-  | S_obj (IdT, Local_binding _) -> true
+  | Local_binding _ -> true
   | _ -> false
 
 and local_binding_key = function
-  | S_obj (IdT, Local_binding key) -> key
+  | Local_binding key -> key
   | _ -> raise (Unexpected ("binding local-binding-key precondition invalidated", Types.void))
 
 and is_core_form = function
-  | S_obj (ExpanderT, Core_form _) -> true
+  | Core_form _ -> true
   | _ -> false
 
 and core_form_expander = function
-  | S_obj (ExpanderT, Core_form t) -> t
+  | Core_form t -> t
   | _ -> raise (Unexpected ("binding core-form-expander precondition invalidated", Types.void))
 
-and make_core_form f =
-  S_obj (ExpanderT, Core_form f)
+and make_core_form f = Core_form f
 
 let is_eq_free_identifier
   = fun a b ->
@@ -86,8 +73,8 @@ let add_local_binding_bang
                  ("arg must satisfy predicate identifier?", id));
       let key = Types.Gensym.gensym ~sym:(
           Syntax.syntax_e id |> get_ok
-          |> Util.unwrap_id |> get_ok) () in
-      Scope.add_binding_bang id (S_obj (IdT, Local_binding key))
+          |> Util.unwrap_symbol |> get_ok) () in
+      Scope.add_binding_bang id (Local_binding key)
       >> ok (Util.make_symbol key)
     end
 
@@ -101,26 +88,21 @@ let env_extend env key vl =
     raise (Unexpected ("binding-env-extend predicate symbol? broken", key))
   else MacroCompileEnv.add (Util.unwrap_symbol_exn key) vl env
 
-let variable = S_obj (VoidT, Variable)
+let variable = Variable
 
 let is_variable = function
-  | S_obj (VoidT, Variable) -> true
+  | Variable -> true
   | _ -> false
 
-let missing = S_obj (VoidT, Missing)
+let missing = Missing
 
 let is_missing = function
-  | S_obj (VoidT, Missing) -> true
+  | Missing -> true
   | _ -> false
 
 let is_transformer = function
-  (* | S_obj (TransformerT, Transformer _) -> true *)
   | o when Util.is_procedure o -> true
   | _ -> false
-
-(* let unwrap_transformer_exn = function
- *   | S_obj (TransformerT, Transformer f) -> f
- *   | o -> raise (Err.Unexpected ("'unwrap_transformer_exn precondition broken", o)) *)
 
 (* FIXME ----
  * questionss:

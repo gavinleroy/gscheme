@@ -65,31 +65,27 @@ and compile = Compile.compile
 
 let%test_module _ = (module struct
 
+  module Err = Types.Err
   open Util
-
   open struct
     open Types
     let ( >>= ), ( >> ) = Err.( >>= ), Err.( >> )
   end
 
   let _ = register ()
-  let _ = Terminal.print_endline "Testing expand-main module ===>"
-
-  let display cmp vl =
-    Terminal.display_scm_obj cmp;
-    Terminal.print " = ";
-    Terminal.display_scm_obj_endline vl
+  let _ = Terminal.print_endline "Testing expand-main module ===>\n"
 
   let expand_print_eval expr =
     (expand_expression expr
      >>= compile
-     >>= fun compiled -> eval compiled
+     >>= fun compiled ->
+     Terminal.display_scm_obj compiled;
+     eval compiled
      >>| fun evaled ->
-     (display compiled evaled);
-     evaled) |> fun r ->
-    Terminal.display_result_endline r;
-    Terminal.force_newline ();
-    Types.Err.ok ()
+     Terminal.print " = ";
+     Terminal.display_scm_obj_endline evaled;
+     Terminal.force_newline ();
+     evaled)
 
   let add_let es =
     Util.Test.string_to_datum
@@ -111,114 +107,80 @@ let%test_module _ = (module struct
                    ; Util.Test.string_to_datum es
                    ]
 
-  let%test _ = (
-    let _v = expand_print_eval
-        (Test.string_to_datum
-           "(lambda (x) x)") in
-    true)
+  let check ?(expected = None) e =
+    match expected, e with
+    | None, _ -> true
+    | Some (Ok v), (Ok e) -> v = e
+
+  let check_against exp e =
+    check ~expected:(Some exp) e
 
   let%test _ = (
-    let _v =
+    check
+      (expand_print_eval
+         (Test.string_to_datum
+            "(lambda (x) x)")))
+
+  let%test _ = (
+    check
       (expand_print_eval
          (add_let
             "(lambda (x)
                (let ((y x))
-                 y))")) in
-    true)
+                 y))")))
 
   let%test _ = (
-    let _v =
+    check
       (expand_print_eval
          (add_let
             "(lambda (x)
-               (let-syntax ((y (lambda (stx) (quote-syntax 9)))) y))")) in
-    true)
+               (let-syntax ((y (lambda (stx) (quote-syntax 9)))) y))")))
 
-  (*
-   * (define (eval-expression e #:check [check-val #f])
-   *   (define-values (c v) (compile+eval-expression e))
-   *   (when check-val
-   *     (unless (equal? v check-val)
-   *       (error "check failed")))
-   *   v)
-   *
-   * (compile+eval-expression
-   *  (add-let
-   *   '(let ([z 9])
-   *     (let-syntax ([m (lambda (stx) (car (cdr (syntax-e stx))))])
-   *       (let ([x 5]
-   *             [y (lambda (z) z)])
-   *         (let ([z 10])
-   *           (list z (m 10))))))))
-   *
-   * "expansion not captured"
-   * (eval-expression
-   *  #:check 'x-1
-   *  (add-let
-   *   '(let ([x 'x-1])
-   *     (let-syntax ([m (lambda (stx) (quote-syntax x))])
-   *       (let ([x 'x-3])
-   *         (m))))))
-   *
-   * "non-capturing expansion"
-   * (eval-expression
-   *  #:check 'x-3
-   *  (add-let
-   *   '(let ([x 'x-1])
-   *     (let-syntax ([m (lambda (stx)
-   *                       (datum->syntax
-   *                        (quote-syntax here)
-   *                        (list (quote-syntax let)
-   *                              (list (list (quote-syntax x)
-   *                                          (quote-syntax 'x-2)))
-   *                              (car (cdr (syntax-e stx))))))])
-   *       (let ([x 'x-3])
-   *         (m x))))))
-   *
-   * "distinct generated variables"
-   * #;
-   * (eval-expression
-   *  #:check '(2 1)
-   *  '(letrec-syntaxes+values
-   *    ([(gen) (lambda (stx)
-   *              (let-values ([(vals) (syntax-e (car (cdr (syntax-e stx))))]
-   *                           [(binds) (syntax-e (car (cdr (cdr (syntax-e stx)))))]
-   *                           [(refs) (syntax-e (car (cdr (cdr (cdr (syntax-e stx))))))])
-   *                (datum->syntax
-   *                 #f
-   *                 (if (null? vals)
-   *                     (list (quote-syntax bind) binds refs)
-   *                     (list (quote-syntax gen)
-   *                           (cdr vals)
-   *                           (cons (list (list (quote-syntax x))
-   *                                       (car vals))
-   *                                 binds)
-   *                           (cons (quote-syntax x)
-   *                                 refs))))))]
-   *     [(bind) (lambda (stx)
-   *               (let-values ([(binds) (car (cdr (syntax-e stx)))]
-   *                            [(refs) (car (cdr (cdr (syntax-e stx))))])
-   *                 (datum->syntax
-   *                  (quote-syntax here)
-   *                  (list (quote-syntax let-values)
-   *                        binds
-   *                        (cons (quote-syntax list)
-   *                              refs)))))])
-   *    ()
-   *    (gen (1 2) () ())))
-   *
-   *
-   * "non-transformer binding misuse"
-   * (with-handlers ([exn:fail? (lambda (exn)
-   *                              (unless (regexp-match? #rx"illegal use of syntax"
-   *                                                     (exn-message exn))
-   *                                (error "wrong error"))
-   *                              'illegal-use)])
-   *   (expand (namespace-syntax-introduce
-   *            (datum->syntax #f
-   *                           '(let-syntax ([v 1])
-   *                             v))))
-   *   (error "shouldn't get here")) *)
+  let%test _ = (
+    check_against
+      (Test.string_to_datum "(10 10)" |> Err.ok)
+      (expand_print_eval
+         (add_let
+            "(let ((z 9))
+               (let-syntax ((m (lambda (stx) (cadr (syntax-e stx)))))
+                 (let ((x 5)
+                       (y (lambda (z) z)))
+                   (let ((z 10))
+                     (list z (m 10))))))")))
+
+  let%test _ = (
+    check_against
+      (Test.string_to_datum "x-1" |> Err.ok)
+      (expand_print_eval
+         (add_let
+            "(let ((x 'x-1))
+               (let-syntax ((m (lambda (stx) (quote-syntax x))))
+                 (let ((x 'x-3))
+                   (m))))")))
+
+  let%test _ = (
+    check_against
+      (Test.string_to_datum "x-3" |> Err.ok)
+      (expand_print_eval
+         (add_let
+            "(let ((x 'x-1))
+               (let-syntax ((m (lambda (stx)
+                                 (datum->syntax
+                                  (quote-syntax here)
+                                  (list (quote-syntax let)
+                                        (list (list (quote-syntax x)
+                                                    (quote-syntax 'x-2)))
+                                        (cadr (syntax-e stx)))))))
+                 (let ((x 'x-3))
+                   (m x))))")))
+
+  (* FIXME include a good way to check the proper errors were thrown *)
+  let%test _ = (
+    check
+      (expand_print_eval
+         (add_let
+            (* XXX THROWS illegal syntax *)
+            "(let-syntax ((v 1)) v)")))
 
   let _ = Terminal.print_endline "<=== Done expand-main\n"
 

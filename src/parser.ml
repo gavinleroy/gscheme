@@ -172,34 +172,27 @@ let parse_prog =
 
 let rec scheme_object_of_sexp : sexp -> scheme_object
   = function
-    | SexpBool b -> Types.S_obj (BoolT, Bool b)
-    | SexpInt i -> Types.S_obj (NumT, Num (Types.Number.Int i))
-    | SexpId i -> Types.S_obj (IdT, Id i)
-    | SexpString s -> Types.S_obj (StringT, String s)
+    | SexpBool b -> Bool b
+    | SexpInt i -> Num (Types.Number.Int i)
+    | SexpId i -> Id i
+    | SexpString s -> String s
     | SexpList l ->
-      Types.S_obj (ListT, List
-                     (List.map scheme_object_of_sexp l))
+      List (List.map scheme_object_of_sexp l)
     | SexpDotted (hd, tl) ->
       let hd = List.map scheme_object_of_sexp hd in
       begin match scheme_object_of_sexp tl with
-        | Types.S_obj (DottedT, Dotted (hd', tl)) ->
-          Types.S_obj (DottedT, Dotted
-                         (hd @ hd', tl))
-        | Types.S_obj (ListT, List ls) ->
-          Types.S_obj (ListT, List
-                         (hd @ ls))
-        | tl ->
-          Types.S_obj (DottedT, Dotted
-                         (hd, tl))
+        | Dotted (hd', tl) ->
+          Dotted (hd @ hd', tl)
+        | List ls -> List (hd @ ls)
+        | tl -> Dotted (hd, tl)
       end
     | SexpHash inner ->
       begin match scheme_object_of_sexp inner with
-        | Types.S_obj (ListT, List (Types.S_obj (IdT, Id "quote") :: values)) ->
-          Types.S_obj (ListT, List (Types.S_obj (IdT, Id "quote-syntax") :: values))
-        | Types.S_obj (ListT, List values) ->
-          S_obj (VecT, Vec (Vector.of_list values))
-        | Types.S_obj (IdT, Id v) ->
-          S_obj (IdT, Id ("#" ^ v))
+        | List (Id "quote" :: values) ->
+          List (Id "quote-syntax" :: values)
+        | List values ->
+          Vec (Vector.of_list values)
+        | Id v -> Id ("#" ^ v)
         | _ -> raise (Err.Unexpected
                         ("Hashed value not supported : " ^ __LOC__,
                          Types.void))
