@@ -19,7 +19,7 @@ let bind_core_forms () =
       into the expansion environment. *)
   begin
 
-    Core.add_core_form_bang
+    Core.add_core_form
       "lambda"
       (fun s env ->
          Match.match_syntax s
@@ -27,7 +27,7 @@ let bind_core_forms () =
          >>= fun m -> let sc = Scope.fresh () in
          m (Util.make_symbol "id")
          >>= Util.list_map (fun id -> Scope.add_scope id sc)
-         >>= fun ids -> Util.list_map_m Binding.add_local_binding_bang ids
+         >>= fun ids -> Util.list_map_m Binding.add_local_binding ids
          >>= Util.list_fold (fun e key ->
              Binding.env_extend e key Binding.variable) env
          >>= fun body_env -> m (Util.make_symbol "body")
@@ -38,8 +38,7 @@ let bind_core_forms () =
                              ; ids
                              ; exp_body
                              ]));
-
-    Core.add_core_form_bang
+    Core.add_core_form
       "let-syntax"
       (fun s env ->
          Match.match_syntax s
@@ -47,7 +46,7 @@ let bind_core_forms () =
          >>= fun m -> let sc = Scope.fresh () in
          m (Util.make_symbol "trans-id")
          >>= Util.list_map (fun id -> Scope.add_scope id sc)
-         >>= fun trans_ids -> Util.list_map_m Binding.add_local_binding_bang trans_ids
+         >>= fun trans_ids -> Util.list_map_m Binding.add_local_binding trans_ids
          >>= fun trans_keys -> m (Util.make_symbol "trans-rhs")
          >>= Util.list_map_m (fun rhs ->
              Expander.eval_for_syntax_binding rhs env
@@ -56,7 +55,7 @@ let bind_core_forms () =
          >>= fun body_env -> m (Util.make_symbol "body")
          >>= fun body_m -> Expander.expand (Scope.add_scope body_m sc) body_env);
 
-    Core.add_core_form_bang
+    Core.add_core_form
       "#%app"
       (fun s env ->
          Match.match_syntax s (Match.of_string "(#%app rator rand ...)")
@@ -68,13 +67,13 @@ let bind_core_forms () =
          >>= Lib.cons expanded_rator
          >>= Lib.cons app_m);
 
-    Core.add_core_form_bang
+    Core.add_core_form
       "quote"
       (fun s env ->
          Match.match_syntax s (Match.of_string "(quote datum)")
          >> Types.Err.ok s);
 
-    Core.add_core_form_bang
+    Core.add_core_form
       "quote-syntax"
       (fun s env ->
          Match.match_syntax s (Match.of_string "(quote-syntax datum)")

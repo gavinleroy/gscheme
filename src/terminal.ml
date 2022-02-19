@@ -75,35 +75,33 @@ let format_runtime_exn
         fprintf fmt "@[<v 2>%s: %s;@,%s@,error identifier: %a@]"
           "XXX" "runtime error" msg
           format_scheme_obj id
-
       | Arity_mismatch (expected, given, objs) ->
         fprintf fmt "@[<v 2>%s: %s;@,expected: %d@,given: %d@,args: %a@]"
           "XXX" "arity mismatch"
           expected given
           (pp_print_list ~pp_sep:pp_print_space format_scheme_obj) objs
-
       | Type_mismatch (contract, obj) ->
         fprintf fmt "@[<v 2>%s: %s;@,predicate: %s@,unsatisfied by: %a@]"
           "XXX" "contract violation"
           contract
           format_scheme_obj obj
-
       | Free_var (var, None) ->
         fprintf fmt "@[<v 2>%s: %s;@,%s@]"
           var "undefined"
           "cannot reference an identifier before its definition"
-
       | Free_var (var, Some obj) ->
         fprintf fmt "@[<v 2>%s: %s;@,%s@,%a@]"
           var "undefined"
           "cannot reference an identifier before its definition"
           format_scheme_obj obj
-
       | Bad_form (msg, obj) ->
         fprintf fmt "@[<v 2>%s:@ %s;@,%s;@,found at: %a@]"
           "XXX" "bad form" msg
           format_scheme_obj obj
-
+      | Command (msg, obj) ->
+        fprintf fmt "@[<v 2>%s:@ %s;@,%s;@,found at: %a@]"
+          "XXX" "invalid aux command" msg
+          format_scheme_obj obj
       | Parser str ->
         fprintf fmt "@[<v 2>%s: %s;@]@,@[<v 2>%s@]"
           "XXX" "syntax error" str

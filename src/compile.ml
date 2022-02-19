@@ -46,19 +46,17 @@ let rec compile
           >>= fun args -> m body
           >>= compile
           >>| fun compiled_bdy ->
-          Util.(make_list [ lambda
-                          ; args
-                          ; compiled_bdy
-                          ])
+          Util.make_list [ lambda
+                         ; args
+                         ; compiled_bdy
+                         ]
 
         | Some "#%app" ->
           let rest = Util.make_symbol "rest" in
           Match.match_syntax s
             (Match.of_string "(#%app . rest)")
           >>= fun m -> m rest
-          >>= Util.unwrap_list
-          >>= Err.map_m compile
-          >>| Util.make_list
+          >>= Util.list_map_m compile
 
         | Some "quote" ->
           let quote = Util.make_symbol "quote"

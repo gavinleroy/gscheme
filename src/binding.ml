@@ -65,7 +65,7 @@ let is_eq_free_identifier
                      ("the guarded expressions of 'free-identifier=? should be exhaustive"
                      , Types.void))
 
-let add_local_binding_bang
+let add_local_binding
   = fun id ->
     begin
       if not (Syntax.is_identifier id) then
@@ -74,7 +74,7 @@ let add_local_binding_bang
       let key = Types.Gensym.gensym ~sym:(
           Syntax.syntax_e id |> get_ok
           |> Util.unwrap_symbol |> get_ok) () in
-      Scope.add_binding_bang id (Local_binding key)
+      Scope.add_binding id (Local_binding key)
       >> ok (Util.make_symbol key)
     end
 

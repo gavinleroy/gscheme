@@ -110,6 +110,7 @@ type runtime_exn' =
   | Type_mismatch of (string * scheme_object)
   | Free_var of (string * (scheme_object option))
   | Bad_form of (string * scheme_object)
+  | Command of (string * scheme_object)
   | Parser of string
 
 and 'a maybe_exn = ('a, runtime_exn') Result.t

@@ -8,13 +8,16 @@
 
 open Gscm
 
+module Err = Types.Err
+
 open struct
-  let ( >>= ), ( >>=? ) = Types.Err.( >>= ), Types.Err.( >>=? )
+  open Types
+  let ( >>= ), ( >>=? ) =
+    Err.( >>= ), Err.( >>=? )
 end
 
-(* MAIN LOOP *)
-
-let start () =
+let start () : unit =
+  Sys.catch_break true;
 
   let do_eval_print scm_obj =
     try
@@ -25,28 +28,34 @@ let start () =
       |>
       Terminal.display_result_endline ~ignore:(Util.is_void)
     with
-      Types.Err.Unexpected tup ->
+    | Err.Unexpected tup ->
       Terminal.format_internal_exn_endline tup
+    | Sys.Break -> Terminal.print_endline "interrupted ..."
   in
 
-  let rec loop () =
+  let rec loop () : unit =
     Terminal.print_flush "> ";
-    (* TODO instead of reading a single line, allow the user
-     * to type an expression accross multiple lines and only capture
-     * once all parens are close
-     ***)
-    begin match Terminal.read_expr ()
-                |> Parser.scheme_object_of_string with
-    | Ok asts ->
-      List.iter do_eval_print asts;
+    try
+      (Terminal.read_expr ()
+       |> Parser.scheme_object_of_string
+       >>= (fun expr ->
+           (if Cmd.is_command expr then
+              Cmd.run expr
+            else Err.ok expr))
+       |> (function
+           | Ok asts -> List.iter do_eval_print asts
+           | Error e -> Terminal.display_exn_endline e)
+      ; loop ())
+    with
+    | Sys.Break ->
+      Terminal.force_newline ();
       loop ()
-    | Error e ->
-      Terminal.display_exn_endline e;
-      loop ()
-    end
 
+    | End_of_file ->
+      Terminal.print_endline "Ctrl-D";
+      exit 0
   in
   Terminal.init ();
-  Terminal.print_endline "Welcome to GScheme v0.0.1\n";
+  Terminal.print_endline "Welcome to GScheme v0.1\n";
   Expand_main.register ();
   loop ()

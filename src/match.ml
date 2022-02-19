@@ -64,6 +64,7 @@ let match_syntax : scheme_object -> scheme_object
   -> (scheme_object -> scheme_object maybe_exn) maybe_exn
   = fun orig_s pattern ->
     let rec matcher s pattern =
+
       if U.is_symbol pattern then
         if (Str.string_match (Str.regexp "^id(:\\|$)")
               (U.unwrap_symbol pattern |> get_ok) 0

@@ -31,6 +31,27 @@ let first_then ft gt =
   let%bind sub = gt in
   return (stem ^ (char_list_to_string sub))
 
+(* NOTE do not interact with directory *)
+let paren_stack = ref []
+
+let reset_paren_stack () =
+  paren_stack := []
+
+let push_paren_stack c =
+  paren_stack := '(' :: !paren_stack
+
+let push_paren_stack c =
+  paren_stack := '(' :: !paren_stack
+
+let pop_paren_stack c =
+  match !paren_stack, c with
+  | [], _ -> fail (Printf.sprintf "extra closing %c" c)
+  | ('[' :: rest), ')' -> fail "expected closing ']' but found ')'"
+  | ('(' :: rest), ']' -> fail "expected closing ')' but found ']'"
+  | ('[' :: rest), ']' -> return ()
+  | ('(' :: rest), ')' -> return ()
+  | _, _ -> fail "unexpected failure"
+
 let is_whitespace = function
   | '\x20' | '\x0a' | '\x0d' | '\x09' -> true
   | _ -> false
@@ -120,15 +141,23 @@ let identifier =
          ; peculiar_identifier
          ] >>| (fun id -> SexpId id)
 
+let l_paren =
+  (char '(' (* <|> (char '[' *))
+(* >>| push_paren_stack *)
+
+let r_paren =
+  (char ')' (* <|> char ']' *))
+(* >>| pop_paren_stack *)
+
 let parse_expr =
   fix (fun parse_expr ->
       let parse_list =
-        lex (char '(') *> sep_by whitespace parse_expr <* lex (char ')')
+        lex (l_paren) *> sep_by whitespace parse_expr <* lex (r_paren)
         >>| fun ls -> SexpList ls
 
       and parse_dotted =
-        let%bind front = lex (char '(') *> sep_by whitespace parse_expr in
-        let%map last = lex (char '.') *> lex parse_expr <* char ')' in
+        let%bind front = lex (l_paren) *> sep_by whitespace parse_expr in
+        let%map last = lex (char '.') *> lex parse_expr <* r_paren in
         SexpDotted (front, last)
 
       and parse_quoted =
@@ -200,6 +229,7 @@ let rec scheme_object_of_sexp : sexp -> scheme_object
 
 let sexpr_of_string : string -> sexp list Err.t
   = fun s ->
+    reset_paren_stack ();
     match parse_string ~consume:Consume.All parse_prog s with
     | Ok parsed -> Err.ok parsed
     | Error e -> Err.error (Parser e)

@@ -17,11 +17,13 @@ end
 let register () =
   begin
     Expand_expr.bind_core_forms ();
+
+    (* bind core primitives *)
     Hashtbl.iter
-      (fun i b -> Core.add_core_primitive_bang i (Box.get b))
+      (fun i b -> Core.add_core_primitive i (Box.get b))
       (Namespace.base_table ());
 
-    Core.add_core_primitive_bang
+    Core.add_core_primitive
       "syntax-e"
       (Namespace.Wrappers.single_arg_procedure Syntax.syntax_e
        |> fun f -> Util.make_proc (Some "syntax-e", f));
@@ -29,7 +31,7 @@ let register () =
     (* The current version of datum->syntax
        is not  well supported for exposing to
        clients. *)
-    Core.add_core_primitive_bang
+    Core.add_core_primitive
       "datum->syntax"
       (Namespace.Wrappers.double_arg_procedure
          (fun ctx v ->
@@ -69,7 +71,7 @@ let%test_module _ = (module struct
   open Util
   open struct
     open Types
-    let ( >>= ), ( >> ) = Err.( >>= ), Err.( >> )
+    let ( >>= ) = Err.( >>= )
   end
 
   let _ = register ()
@@ -111,6 +113,7 @@ let%test_module _ = (module struct
     match expected, e with
     | None, _ -> true
     | Some (Ok v), (Ok e) -> v = e
+    | _, _ -> false
 
   let check_against exp e =
     check ~expected:(Some exp) e

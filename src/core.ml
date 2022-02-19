@@ -31,30 +31,30 @@ let core_primitives =
 let unwrap_sym_exn s =
   Util.unwrap_symbol s |> Err.get_ok
 
-let add_core_binding_bang : Types.Identifier.t -> unit
+let add_core_binding : Types.Identifier.t -> unit
   = fun sym ->
     (Syntax.datum_to_syntax (Some core_syntax) (Util.make_symbol sym))
     >>= (fun stx ->
-        Scope.add_binding_bang stx
+        Scope.add_binding stx
           (Binding.Core_binding sym))
     |> Err.get_ok
 
-let add_core_form_bang
+let add_core_form
   : Types.Identifier.t
     -> (scheme_object
         -> scheme_object Binding.MacroCompileEnv.t
         -> scheme_object Err.t)
     -> unit
   = fun sym proc ->
-    add_core_binding_bang sym;
+    add_core_binding sym;
     Hashtbl.add  core_forms sym
       (Binding.make_core_form proc)
 
-let add_core_primitive_bang
+let add_core_primitive
   : Types.Identifier.t
     -> scheme_object -> unit
   = fun sym vl ->
-    add_core_binding_bang sym;
+    add_core_binding sym;
     Hashtbl.add core_primitives sym vl
 
 let core_form_sym s =

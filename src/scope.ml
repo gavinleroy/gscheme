@@ -51,7 +51,7 @@ let hsh_size = 1000 (* Estimated maximum number of bindings *)
 let all_bindings =
   Hashtbl.create ~random:false hsh_size
 
-let add_binding_bang : scheme_object
+let add_binding : scheme_object
   -> scheme_object
   -> unit Err.t
   = fun id binding ->
