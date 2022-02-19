@@ -62,9 +62,9 @@ Sadly, the REPL will not *currently* accept newlines in the expression so the ab
 
 ## Progress
 
-Progress within GScheme is slightly (and will continue to be) staggered. Largly influenced by free time in-between semesters and homework. 
+GScheme progress is slightly (and will continue to be) staggered. Largly influenced by free time in between semesters and homework. 
 In general, the underlying scheme implementation provides functionality as needed by the macro expander. Once macros are in a sufficient state, the rest of the evaluation and standard library will be added.
 
 ## Reference Links
 
-<a id="1">[1]<\a> [[github.com/mflatt/expander]]
+<a id="1"> [1] </a> <github.com/mflatt/expander>
